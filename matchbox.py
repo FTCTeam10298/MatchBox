@@ -385,7 +385,7 @@ class MatchBoxCore:
                         message = await asyncio.wait_for(websocket.recv(), timeout=1.0)
                         data = json.loads(message)
 
-                        if data.get("type") == "SHOW_MATCH":
+                        if data.get("type") == "SHOW_PREVIEW" or data.get("type") == "SHOW_MATCH":
                             # Extract field number
                             field_number = data.get("field")
                             if field_number is None and "params" in data:
