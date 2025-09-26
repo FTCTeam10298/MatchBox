@@ -737,7 +737,7 @@ class MatchBoxGUI:
             'obs_password': self.obs_password_var.get(),
             'num_fields': int(self.num_fields_var.get()) if self.num_fields_var.get().isdigit() else 2,
             'output_dir': self.output_dir_var.get(),
-            'web_port': int(self.web_port_var.get()) if self.web_port_var.get().isdigit() else 8080,
+            'web_port': int(self.web_port_var.get()) if self.web_port_var.get().isdigit() else 8000,
             'field_scene_mapping': {int(k): v.get() for k, v in self.scene_mappings.items()}
         }
         return config
