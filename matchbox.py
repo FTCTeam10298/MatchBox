@@ -25,6 +25,7 @@ import tempfile
 import uuid
 import cv2
 import numpy as np
+from local_video_processor import LocalVideoProcessor
 import os
 import shutil
 import re
@@ -61,7 +62,7 @@ class MatchBoxCore:
         # Video processing settings
         self.frame_increment = self.config.get('frame_increment', 5.0)
         self.max_attempts = self.config.get('max_attempts', 30)
-        self.output_dir = Path(self.config.get('output_dir', './match_clips'))
+        self.output_dir = Path(self.config.get('output_dir', './match_clips')).absolute()
 
         # Web server settings
         self.web_port = self.config.get('web_port', 8000)
@@ -87,11 +88,16 @@ class MatchBoxCore:
         self.web_server = None
         self.web_thread = None
 
+        # Local video processing
+        self.local_video_processor = None
+        self.obs_recording_path = None
+
         # Callbacks
         self.log_callback = None
 
-        # Create output directory
-        self.output_dir.mkdir(exist_ok=True, parents=True)
+        # Create output directory with event code subfolder
+        self.clips_dir = self.output_dir / self.event_code
+        self.clips_dir.mkdir(exist_ok=True, parents=True)
 
     def set_log_callback(self, callback):
         """Set callback for logging messages"""
@@ -303,6 +309,88 @@ class MatchBoxCore:
             self.log(f"✗ Error configuring OBS scenes: {e}")
             return False
 
+    def get_obs_recording_path(self):
+        """Get current OBS recording file path via WebSocket"""
+        if not self.obs_ws:
+            return None
+
+        try:
+            # Check if recording is active
+            record_status = self.obs_ws.call(obsrequests.GetRecordStatus())
+            if not record_status.datain.get('outputActive', False):
+                self.log("OBS is not currently recording")
+                return None
+
+            # Try to get recording output settings
+            try:
+                # Try advanced file output first
+                output_settings = self.obs_ws.call(obsrequests.GetOutputSettings(outputName="adv_file_output"))
+                recording_path = output_settings.datain['outputSettings'].get('path')
+            except Exception:
+                # Fallback: try simple file output
+                try:
+                    output_settings = self.obs_ws.call(obsrequests.GetOutputSettings(outputName="simple_file_output"))
+                    recording_path = output_settings.datain['outputSettings'].get('path')
+                except Exception:
+                    # Final fallback: use record status filename if available
+                    recording_path = record_status.datain.get('outputPath')
+
+            if recording_path:
+                self.log(f"Found OBS recording path: {recording_path}")
+                return recording_path
+            else:
+                self.log("Could not determine OBS recording path")
+                return None
+
+        except Exception as e:
+            self.log(f"Error getting OBS recording path: {e}")
+            return None
+
+    def setup_local_video_processor(self):
+        """Initialize local video processor with OBS recording path"""
+        try:
+            self.log("🔍 Setting up local video processor...")
+
+            # Check if LocalVideoProcessor was imported successfully
+            try:
+                import tempfile
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    test_processor = LocalVideoProcessor({'output_dir': temp_dir})
+                self.log("✅ LocalVideoProcessor import successful")
+            except Exception as import_error:
+                self.log(f"❌ LocalVideoProcessor import failed: {import_error}")
+                return False
+
+            # Get current OBS recording path
+            recording_path = self.get_obs_recording_path()
+
+            if recording_path:
+                # Create local video processor
+                config = {
+                    'output_dir': str(self.clips_dir),  # clips_dir is already absolute
+                    'pre_match_buffer_seconds': self.config.get('pre_match_buffer_seconds', 10),
+                    'post_match_buffer_seconds': self.config.get('post_match_buffer_seconds', 5),
+                    'match_duration_seconds': self.config.get('match_duration_seconds', 150)
+                }
+
+                self.local_video_processor = LocalVideoProcessor(config)
+                self.local_video_processor.set_recording_path(recording_path)
+                self.local_video_processor.start_monitoring()
+
+                self.obs_recording_path = recording_path
+                self.log(f"✅ Local video processor ready: {recording_path}")
+                return True
+            else:
+                self.log("❌ Could not setup local video processor - no recording path")
+                self.log("   Make sure OBS is recording before starting MatchBox")
+                return False
+
+        except Exception as e:
+            self.log(f"❌ Error setting up local video processor: {e}")
+            import traceback
+            self.log(f"❌ Full error traceback: {traceback.format_exc()}")
+            return False
+
     def switch_scene(self, field_number):
         """Switch OBS scene based on field number"""
         if field_number not in self.field_scene_mapping:
@@ -325,13 +413,13 @@ class MatchBoxCore:
     def start_web_server(self):
         """Start local web server for match clips"""
         try:
-            # Create output directory if it doesn't exist
-            self.output_dir.mkdir(exist_ok=True, parents=True)
-            output_dir_str = str(self.output_dir.absolute())
+            # Create clips directory if it doesn't exist
+            self.clips_dir.mkdir(exist_ok=True, parents=True)
+            clips_dir_str = str(self.clips_dir.absolute())
 
             # Create index.html FIRST, before starting server
             try:
-                index_path = self.output_dir / "index.html"
+                index_path = self.clips_dir / "index.html"
                 index_content = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -351,7 +439,7 @@ class MatchBoxCore:
         <h3>Match Clips Server</h3>
         <p><strong>Status:</strong> Running on port {self.web_port}</p>
         <p><strong>Event Code:</strong> {self.event_code}</p>
-        <p><strong>Output Directory:</strong> {output_dir_str}</p>
+        <p><strong>Output Directory:</strong> {clips_dir_str}</p>
     </div>
 
     <h3>&#x1F4C1; Available Files</h3>
@@ -372,30 +460,32 @@ class MatchBoxCore:
             except Exception as e:
                 self.log(f"Error creating index.html: {e}")
 
-            # Simple, reliable handler using os.chdir approach
-            original_dir = os.getcwd()
+            # Custom handler that serves from a specific directory without changing working directory
+            def make_handler(directory):
+                class MatchClipHandler(SimpleHTTPRequestHandler):
+                    def __init__(self, *args, **kwargs):
+                        super().__init__(*args, directory=directory, **kwargs)
 
-            class MatchClipHandler(SimpleHTTPRequestHandler):
-                def log_message(self, format, *args):
-                    # Enable logging for debugging
-                    print(f"HTTP: {format % args}")
+                    def log_message(self, format, *args):
+                        # Enable logging for debugging
+                        print(f"HTTP: {format % args}")
 
-                def end_headers(self):
-                    # Add CORS headers
-                    self.send_header('Access-Control-Allow-Origin', '*')
-                    self.send_header('Cache-Control', 'no-cache')
-                    super().end_headers()
-
-            # Change to output directory for serving
-            os.chdir(output_dir_str)
+                    def end_headers(self):
+                        # Add CORS headers
+                        self.send_header('Access-Control-Allow-Origin', '*')
+                        self.send_header('Cache-Control', 'no-cache')
+                        super().end_headers()
+                return MatchClipHandler
 
             def run_server():
                 try:
                     self.log(f"Starting web server on port {self.web_port}")
-                    self.log(f"Serving directory: {output_dir_str}")
+                    self.log(f"Serving directory: {clips_dir_str}")
                     self.log(f"Access match clips at http://localhost:{self.web_port}")
 
-                    self.web_server = HTTPServer(('localhost', self.web_port), MatchClipHandler)
+                    # Create handler class with the specific directory
+                    HandlerClass = make_handler(clips_dir_str)
+                    self.web_server = HTTPServer(('localhost', self.web_port), HandlerClass)
                     self.web_server.serve_forever()
                 except OSError as e:
                     if "Address already in use" in str(e):
@@ -404,12 +494,6 @@ class MatchBoxCore:
                         self.log(f"Web server OS error: {e}")
                 except Exception as e:
                     self.log(f"Web server error: {e}")
-                finally:
-                    # Restore original directory
-                    try:
-                        os.chdir(original_dir)
-                    except:
-                        pass
 
             self.web_thread = threading.Thread(target=run_server, daemon=True)
             self.web_thread.start()
@@ -455,6 +539,9 @@ class MatchBoxCore:
         # Start web server
         self.start_web_server()
 
+        # Setup local video processing if OBS is recording
+        self.setup_local_video_processor()
+
         ftc_ws_url = f"ws://{self.scoring_host}:{self.scoring_port}/stream/display/command/?code={self.event_code}"
         self.log(f"Connecting to FTC WebSocket: {ftc_ws_url}")
         self.log(f"Field-scene mapping: {json.dumps(self.field_scene_mapping, indent=2)}")
@@ -481,15 +568,31 @@ class MatchBoxCore:
                                 if self.switch_scene(field_number):
                                     self.current_field = field_number
 
-                        elif data.get("type") == "MATCH_START":
-                            # Match started - begin recording/splitting
+                        elif data.get("type") == "START_MATCH":
+                            # Match started - begin clip generation
                             match_info = data.get("params", {})
-                            self.log(f"Match started: {match_info}")
+                            self.log(f"🎬 Match started: {match_info}")
 
-                        elif data.get("type") == "MATCH_END":
-                            # Match ended - finalize clip
+                            # Add timestamp for accurate clip timing
+                            match_info['timestamp'] = time.time()
+
+                            # Debug: Check processor status
+                            self.log(f"🔍 Local video processor available: {self.local_video_processor is not None}")
+                            if self.local_video_processor:
+                                self.log(f"🔍 Recording path: {self.obs_recording_path}")
+                                self.log(f"🔍 Recording available: {self.local_video_processor.is_recording_available()}")
+
+                            # Trigger clip generation asynchronously
+                            if self.local_video_processor:
+                                self.log("🎬 Starting async clip generation task...")
+                                asyncio.create_task(self.generate_match_clip(match_info))
+                            else:
+                                self.log("❌ Local video processor not available for clipping")
+
+                        elif data.get("type") == "END_MATCH":
+                            # Match ended - log event (clip should already be processing)
                             match_info = data.get("params", {})
-                            self.log(f"Match ended: {match_info}")
+                            self.log(f"🏁 Match ended: {match_info}")
 
                     except asyncio.TimeoutError:
                         continue
@@ -513,6 +616,111 @@ class MatchBoxCore:
         finally:
             await self.shutdown()
 
+    async def generate_match_clip(self, match_info):
+        """Generate a match clip using the local video processor"""
+        try:
+            self.log(f"🎬 Generating clip for match: {match_info}")
+
+            # Double-check processor is available
+            if not self.local_video_processor:
+                self.log("❌ Local video processor is None!")
+                return
+
+            # Extract clip using local video processor
+            self.log("🎬 Calling local_video_processor.extract_clip()...")
+            clip_path = await self.local_video_processor.extract_clip(match_info)
+            self.log(f"🎬 extract_clip() returned: {clip_path}")
+
+            if clip_path:
+                self.log(f"✅ Match clip created: {clip_path}")
+                self.current_match_clips.append(str(clip_path))
+
+                # Update web interface by refreshing index.html with latest clips
+                await self.update_web_interface_clips()
+
+            else:
+                self.log(f"❌ Failed to create match clip - extract_clip returned None")
+
+        except Exception as e:
+            self.log(f"❌ Error generating match clip: {e}")
+            import traceback
+            self.log(f"❌ Full traceback: {traceback.format_exc()}")
+
+    async def update_web_interface_clips(self):
+        """Update web interface to show available clips"""
+        try:
+            # List all video files in clips directory
+            video_files = []
+            for ext in ['.mp4', '.avi', '.mov', '.mkv']:
+                video_files.extend(self.clips_dir.glob(f'*{ext}'))
+
+            # Sort by modification time (newest first)
+            video_files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+
+            # Update index.html with file list
+            clips_dir_str = str(self.clips_dir.absolute())
+
+            # Generate file list HTML
+            file_list_html = ""
+            if video_files:
+                file_list_html = "<ul>"
+                for video_file in video_files[:20]:  # Show last 20 clips
+                    file_size = video_file.stat().st_size / (1024 * 1024)  # MB
+                    mod_time = time.strftime('%Y-%m-%d %H:%M:%S',
+                                           time.localtime(video_file.stat().st_mtime))
+                    file_list_html += f'''
+                    <li>
+                        <a href="{video_file.name}" target="_blank">{video_file.name}</a>
+                        <small>({file_size:.1f} MB, {mod_time})</small>
+                    </li>'''
+                file_list_html += "</ul>"
+            else:
+                file_list_html = "<p><em>No match clips available yet...</em></p>"
+
+            # Update index.html content
+            index_path = self.clips_dir / "index.html"
+            index_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FIRST&reg; MatchBox&trade; - Match Clips</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; margin: 40px; }}
+        h1 {{ color: #0066cc; }}
+        .status {{ padding: 10px; background: #f0f8ff; border-radius: 5px; margin: 20px 0; }}
+        .footer {{ margin-top: 40px; color: #666; font-size: 0.9em; }}
+        li {{ margin: 5px 0; }}
+        small {{ color: #666; margin-left: 10px; }}
+    </style>
+    <meta http-equiv="refresh" content="30">
+</head>
+<body>
+    <h1>&#x1F3A5; FIRST&reg; MatchBox&trade;</h1>
+    <div class="status">
+        <h3>Match Clips Server</h3>
+        <p><strong>Status:</strong> Running on port {self.web_port}</p>
+        <p><strong>Event Code:</strong> {self.event_code}</p>
+        <p><strong>Output Directory:</strong> {clips_dir_str}</p>
+        <p><strong>Total Clips:</strong> {len(video_files)}</p>
+    </div>
+
+    <h3>&#x1F4C1; Available Match Clips</h3>
+    {file_list_html}
+
+    <div class="footer">
+        <p><em>This web interface provides local access to match clips for referees and field staff.</em></p>
+        <p>This page automatically refreshes every 30 seconds to show new clips.</p>
+    </div>
+</body>
+</html>"""
+
+            with open(index_path, 'w', encoding='utf-8') as f:
+                f.write(index_content)
+
+        except Exception as e:
+            self.log(f"Error updating web interface: {e}")
+
     async def shutdown(self):
         """Gracefully shutdown MatchBox"""
         self.log("Shutting down MatchBox...")
@@ -528,6 +736,11 @@ class MatchBoxCore:
 
         # Stop web server
         self.stop_web_server()
+
+        # Stop local video processor
+        if self.local_video_processor:
+            self.local_video_processor.stop_monitoring()
+            self.log("Stopped local video processor")
 
         self.log("MatchBox shutdown complete")
 
@@ -712,10 +925,30 @@ class MatchBoxGUI:
             row=3, column=1, sticky=tk.W, pady=2)
 
         # Info label
+        # Video processing settings
+        ttk.Label(video_frame, text="Video Processing", font=("", 12, "bold")).grid(
+            row=4, column=0, columnspan=3, sticky=tk.W, pady=(10, 5))
+
+        ttk.Label(video_frame, text="Pre-match buffer (seconds):").grid(row=5, column=0, sticky=tk.W, pady=2)
+        self.pre_match_buffer_var = tk.StringVar(value="10")
+        ttk.Entry(video_frame, textvariable=self.pre_match_buffer_var, width=6).grid(
+            row=5, column=1, sticky=tk.W, pady=2)
+
+        ttk.Label(video_frame, text="Post-match buffer (seconds):").grid(row=6, column=0, sticky=tk.W, pady=2)
+        self.post_match_buffer_var = tk.StringVar(value="5")
+        ttk.Entry(video_frame, textvariable=self.post_match_buffer_var, width=6).grid(
+            row=6, column=1, sticky=tk.W, pady=2)
+
+        ttk.Label(video_frame, text="Match duration (seconds):").grid(row=7, column=0, sticky=tk.W, pady=2)
+        self.match_duration_var = tk.StringVar(value="150")
+        ttk.Entry(video_frame, textvariable=self.match_duration_var, width=6).grid(
+            row=7, column=1, sticky=tk.W, pady=2)
+
         info_text = ("Match clips will be available at http://localhost:PORT\n"
-                    "Refs on the scoring network can access video clips locally")
+                    "Refs on the scoring network can access video clips locally\n"
+                    "MatchBox will automatically detect OBS recording and create clips")
         ttk.Label(video_frame, text=info_text, foreground="gray").grid(
-            row=4, column=0, columnspan=3, sticky=tk.W, pady=5)
+            row=8, column=0, columnspan=3, sticky=tk.W, pady=5)
 
     def browse_output_dir(self):
         """Browse for output directory"""
@@ -738,6 +971,9 @@ class MatchBoxGUI:
             'num_fields': int(self.num_fields_var.get()) if self.num_fields_var.get().isdigit() else 2,
             'output_dir': self.output_dir_var.get(),
             'web_port': int(self.web_port_var.get()) if self.web_port_var.get().isdigit() else 8000,
+            'pre_match_buffer_seconds': int(self.pre_match_buffer_var.get()) if self.pre_match_buffer_var.get().isdigit() else 10,
+            'post_match_buffer_seconds': int(self.post_match_buffer_var.get()) if self.post_match_buffer_var.get().isdigit() else 5,
+            'match_duration_seconds': int(self.match_duration_var.get()) if self.match_duration_var.get().isdigit() else 150,
             'field_scene_mapping': {int(k): v.get() for k, v in self.scene_mappings.items()}
         }
         return config
@@ -753,6 +989,9 @@ class MatchBoxGUI:
         self.num_fields_var.set(str(config.get('num_fields', 2)))
         self.output_dir_var.set(config.get('output_dir', './match_clips'))
         self.web_port_var.set(str(config.get('web_port', 8000)))
+        self.pre_match_buffer_var.set(str(config.get('pre_match_buffer_seconds', 10)))
+        self.post_match_buffer_var.set(str(config.get('post_match_buffer_seconds', 5)))
+        self.match_duration_var.set(str(config.get('match_duration_seconds', 150)))
 
         # Load scene mappings
         field_scene_mapping = config.get('field_scene_mapping', {})
