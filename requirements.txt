@@ -11,3 +11,6 @@ Pillow>=8.0.0
 # Additional useful packages
 requests>=2.25.0
 aiohttp>=3.8.0
+
+# GUI theme (optional, recommended for Linux)
+sv-ttk>=2.0.0

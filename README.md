@@ -44,6 +44,11 @@ Install required packages:
 pip install -r requirements.txt
 ```
 
+**Note**: On Linux, the GUI will automatically use the modern Sun Valley theme if available. If you encounter theme-related issues, you can install it separately:
+```bash
+pip install sv-ttk
+```
+
 ### Required System Tools
 - ffmpeg (with ffprobe)
 - yt-dlp (for video downloading)

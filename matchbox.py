@@ -739,6 +739,19 @@ def main():
             pass
 
         root = tk.Tk()
+
+        # Apply Sun Valley theme on Linux
+        import platform
+        if platform.system() == "Linux":
+            try:
+                import sv_ttk
+                sv_ttk.set_theme("dark")
+                logger.info("Applied Sun Valley theme")
+            except ImportError:
+                logger.info("Sun Valley theme not available - install with: pip install sv-ttk")
+            except Exception as e:
+                logger.info(f"Could not apply Sun Valley theme: {e}")
+
         app = MatchBoxGUI(root)
         root.protocol("WM_DELETE_WINDOW", app.on_closing)
 
