@@ -13,7 +13,7 @@ from matchbox import MatchBoxCore
 def main():
     """Main CLI function"""
     parser = argparse.ArgumentParser(
-        description="FIRST® MatchBox™ CLI - FRC Webcast Unit @ home",
+        description="FIRST® MatchBox™ CLI",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
