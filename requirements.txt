@@ -1,0 +1,13 @@
+# Core MatchBox dependencies
+obs-websocket-py==1.0
+websockets==10.4
+opencv-python>=4.5.0
+numpy>=1.20.0
+
+# Video processing dependencies (from match-video-autosplitter)
+yt-dlp>=2023.1.0
+Pillow>=8.0.0
+
+# Additional useful packages
+requests>=2.25.0
+aiohttp>=3.8.0
