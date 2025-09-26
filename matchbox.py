@@ -325,26 +325,111 @@ class MatchBoxCore:
     def start_web_server(self):
         """Start local web server for match clips"""
         try:
-            # Change to output directory for serving files
-            os.chdir(self.output_dir)
+            # Create output directory if it doesn't exist
+            self.output_dir.mkdir(exist_ok=True, parents=True)
+            output_dir_str = str(self.output_dir.absolute())
+
+            # Create index.html FIRST, before starting server
+            try:
+                index_path = self.output_dir / "index.html"
+                index_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FIRST&reg; MatchBox&trade; - Match Clips</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; margin: 40px; }}
+        h1 {{ color: #0066cc; }}
+        .status {{ padding: 10px; background: #f0f8ff; border-radius: 5px; margin: 20px 0; }}
+        .footer {{ margin-top: 40px; color: #666; font-size: 0.9em; }}
+    </style>
+</head>
+<body>
+    <h1>&#x1F3A5; FIRST&reg; MatchBox&trade;</h1>
+    <div class="status">
+        <h3>Match Clips Server</h3>
+        <p><strong>Status:</strong> Running on port {self.web_port}</p>
+        <p><strong>Event Code:</strong> {self.event_code}</p>
+        <p><strong>Output Directory:</strong> {output_dir_str}</p>
+    </div>
+
+    <h3>&#x1F4C1; Available Files</h3>
+    <p>Match clips will appear here as they are processed...</p>
+    <ul>
+        <li><a href="/">Directory listing</a> - View all files</li>
+    </ul>
+
+    <div class="footer">
+        <p><em>This web interface provides local access to match clips for referees and field staff.</em></p>
+        <p>Refresh this page to see new match clips as they become available.</p>
+    </div>
+</body>
+</html>"""
+                with open(index_path, 'w', encoding='utf-8') as f:
+                    f.write(index_content)
+                self.log(f"Created index.html at {index_path}")
+            except Exception as e:
+                self.log(f"Error creating index.html: {e}")
+
+            # Simple, reliable handler using os.chdir approach
+            original_dir = os.getcwd()
 
             class MatchClipHandler(SimpleHTTPRequestHandler):
-                def __init__(self, *args, **kwargs):
-                    super().__init__(*args, directory=str(self.output_dir), **kwargs)
+                def log_message(self, format, *args):
+                    # Enable logging for debugging
+                    print(f"HTTP: {format % args}")
 
-            self.web_server = HTTPServer(('', self.web_port), MatchClipHandler)
+                def end_headers(self):
+                    # Add CORS headers
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.send_header('Cache-Control', 'no-cache')
+                    super().end_headers()
+
+            # Change to output directory for serving
+            os.chdir(output_dir_str)
 
             def run_server():
-                self.log(f"Starting web server on port {self.web_port}")
-                self.log(f"Access match clips at http://localhost:{self.web_port}")
                 try:
+                    self.log(f"Starting web server on port {self.web_port}")
+                    self.log(f"Serving directory: {output_dir_str}")
+                    self.log(f"Access match clips at http://localhost:{self.web_port}")
+
+                    self.web_server = HTTPServer(('localhost', self.web_port), MatchClipHandler)
                     self.web_server.serve_forever()
+                except OSError as e:
+                    if "Address already in use" in str(e):
+                        self.log(f"Web server port {self.web_port} is already in use")
+                    else:
+                        self.log(f"Web server OS error: {e}")
                 except Exception as e:
-                    if self.running:  # Only log if we're supposed to be running
-                        self.log(f"Web server error: {e}")
+                    self.log(f"Web server error: {e}")
+                finally:
+                    # Restore original directory
+                    try:
+                        os.chdir(original_dir)
+                    except:
+                        pass
 
             self.web_thread = threading.Thread(target=run_server, daemon=True)
             self.web_thread.start()
+
+            # Give server a moment to start
+            import time
+            time.sleep(1.0)
+
+            # Test the server
+            try:
+                import urllib.request
+                test_url = f"http://localhost:{self.web_port}/index.html"
+                with urllib.request.urlopen(test_url, timeout=2) as response:
+                    if response.getcode() == 200:
+                        self.log("✅ Web server test successful")
+                    else:
+                        self.log(f"❌ Web server test failed: HTTP {response.getcode()}")
+            except Exception as e:
+                self.log(f"❌ Web server test failed: {e}")
+
             return True
 
         except Exception as e:
