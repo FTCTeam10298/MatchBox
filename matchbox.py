@@ -64,7 +64,7 @@ class MatchBoxCore:
         self.output_dir = Path(self.config.get('output_dir', './match_clips'))
 
         # Web server settings
-        self.web_port = self.config.get('web_port', 8080)
+        self.web_port = self.config.get('web_port', 8000)
         self.mdns_name = self.config.get('mdns_name', 'ftcvideo.local')
 
         # Field to scene mapping
@@ -341,7 +341,7 @@ class MatchBoxGUI:
             'obs_password': '',
             'num_fields': 2,
             'output_dir': './match_clips',
-            'web_port': 8080,
+            'web_port': 8000,
             'field_scene_mapping': {1: "Field 1", 2: "Field 2"}
         }
 
@@ -492,7 +492,7 @@ class MatchBoxGUI:
             row=2, column=0, columnspan=3, sticky=tk.W, pady=(10, 5))
 
         ttk.Label(video_frame, text="Web Server Port:").grid(row=3, column=0, sticky=tk.W, pady=2)
-        self.web_port_var = tk.StringVar(value="8080")
+        self.web_port_var = tk.StringVar(value="8000")
         ttk.Entry(video_frame, textvariable=self.web_port_var, width=6).grid(
             row=3, column=1, sticky=tk.W, pady=2)
 
@@ -537,7 +537,7 @@ class MatchBoxGUI:
         self.obs_password_var.set(config.get('obs_password', ''))
         self.num_fields_var.set(str(config.get('num_fields', 2)))
         self.output_dir_var.set(config.get('output_dir', './match_clips'))
-        self.web_port_var.set(str(config.get('web_port', 8080)))
+        self.web_port_var.set(str(config.get('web_port', 8000)))
 
         # Load scene mappings
         field_scene_mapping = config.get('field_scene_mapping', {})

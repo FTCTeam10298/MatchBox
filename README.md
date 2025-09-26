@@ -22,7 +22,7 @@ _Disclaimer: MatchBox and Clipfarm are (currently) unofficial, community-ran pro
 
 ✅ **Local Web Interface**
 - Serves match clips via HTTP
-- Accessible at http://localhost:8080 (configurable)
+- Accessible at http://localhost:8000 (configurable)
 - mDNS support for easy access (http://ftcvideo.local)
 - Perfect for refs to review matches without internet
 
@@ -100,7 +100,7 @@ python matchbox-cli.py --config config.json
   "obs_password": "YOUR_OBS_PASSWORD",
   "num_fields": 2,
   "output_dir": "./match_clips",
-  "web_port": 8080,
+  "web_port": 8000,
   "field_scene_mapping": {
     "1": "Field 1",
     "2": "Field 2"
@@ -134,8 +134,8 @@ python matchbox-cli.py --config config.json
    - Process and split match videos
 
 ### Accessing Match Clips
-- **Locally**: http://localhost:8080 (or your configured port)
-- **Network**: http://[computer-ip]:8080
+- **Locally**: http://localhost:8000 (or your configured port)
+- **Network**: http://[computer-ip]:8000
 - **mDNS**: http://ftcvideo.local (if supported)
 
 Perfect for referees and field staff to review matches instantly!

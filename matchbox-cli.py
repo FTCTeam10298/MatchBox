@@ -60,8 +60,8 @@ Examples:
     video_group = parser.add_argument_group("Video & Web Settings")
     video_group.add_argument("--output-dir", default="./match_clips",
                            help="Output directory for match clips (default: ./match_clips)")
-    video_group.add_argument("--web-port", type=int, default=8080,
-                           help="Local web server port (default: 8080)")
+    video_group.add_argument("--web-port", type=int, default=8000,
+                           help="Local web server port (default: 8000)")
 
     # Actions
     action_group = parser.add_argument_group("Actions")
