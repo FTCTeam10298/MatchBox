@@ -131,22 +131,50 @@ class MatchBoxCore:
                 return False
 
         try:
-            # Get current scenes
+            self.log("Starting OBS scene configuration...")
+
+            # Step 1: Get current scenes and sources
+            self.log("Getting current scenes...")
             scenes_response = self.obs_ws.call(obsrequests.GetSceneList())
             existing_scenes = [scene['sceneName'] for scene in scenes_response.datain['scenes']]
+            self.log(f"Found {len(existing_scenes)} existing scenes")
 
-            # Create field scenes if they don't exist
+            # Step 2: Create field scenes FIRST
+            self.log("Creating field scenes...")
             for field_num in range(1, self.num_fields + 1):
                 scene_name = f"Field {field_num}"
                 if scene_name not in existing_scenes:
-                    self.obs_ws.call(obsrequests.CreateScene(sceneName=scene_name))
-                    self.log(f"Created scene: {scene_name}")
+                    try:
+                        self.obs_ws.call(obsrequests.CreateScene(sceneName=scene_name))
+                        self.log(f"✓ Created scene: {scene_name}")
+                    except Exception as e:
+                        self.log(f"✗ Failed to create scene {scene_name}: {e}")
+                else:
+                    self.log(f"✓ Scene already exists: {scene_name}")
 
-                # Add scoring system overlay source
-                overlay_url = f"http://{self.scoring_host}:{self.scoring_port}/display.html?code={self.event_code}&field={field_num}"
-                source_name = f"Field {field_num} Overlay"
+            # Step 3: Get existing sources to avoid duplicates
+            self.log("Checking existing sources...")
+            try:
+                sources_response = self.obs_ws.call(obsrequests.GetInputList())
+                existing_sources = [source['inputName'] for source in sources_response.datain['inputs']]
+                self.log(f"Found {len(existing_sources)} existing sources")
+            except Exception as e:
+                self.log(f"Could not get input list: {e}")
+                existing_sources = []
 
-                # Create browser source for overlay
+            # Step 4: Create shared overlay source
+            shared_overlay_name = "FTC Scoring System Overlay"
+            if shared_overlay_name not in existing_sources:
+                self.log("Creating shared overlay source...")
+                overlay_url = (f"http://{self.scoring_host}:{self.scoring_port}/event/{self.event_code}/display/"
+                              f"?type=audience&bindToField=all&scoringBarLocation=bottom&allianceOrientation=standard"
+                              f"&liveScores=true&mute=false&muteRandomizationResults=false&fieldStyleTimer=false"
+                              f"&overlay=true&overlayColor=%23ff00ff&allianceSelectionStyle=classic&awardsStyle=overlay"
+                              f"&dualDivisionRankingStyle=sideBySide&rankingsFontSize=larger&showMeetRankings=false"
+                              f"&rankingsAllTeams=true")
+                self.log(f"Overlay URL: {overlay_url}")
+
+                # Browser source settings
                 browser_settings = {
                     "url": overlay_url,
                     "width": 1920,
@@ -156,21 +184,123 @@ class MatchBoxCore:
                 }
 
                 try:
-                    self.obs_ws.call(obsrequests.CreateInput(
-                        sceneName=scene_name,
-                        inputName=source_name,
-                        inputKind="browser_source",
-                        inputSettings=browser_settings
-                    ))
-                    self.log(f"Added overlay source to {scene_name}")
-                except Exception as e:
-                    self.log(f"Note: Could not create browser source for {scene_name}: {e}")
+                    # Create the browser source - need to specify a scene for newer API
+                    try:
+                        # Use the first field scene as the target for creation
+                        first_scene = f"Field 1"
+                        self.obs_ws.call(obsrequests.CreateInput(
+                            sceneName=first_scene,
+                            inputName=shared_overlay_name,
+                            inputKind="browser_source",
+                            inputSettings=browser_settings
+                        ))
+                        self.log("✓ Used CreateInput API with scene")
+                    except Exception as e1:
+                        self.log(f"CreateInput failed ({e1}), trying CreateSource...")
+                        # Fallback to older API method
+                        self.obs_ws.call(obsrequests.CreateSource(
+                            sourceName=shared_overlay_name,
+                            sourceKind="browser_source",
+                            sourceSettings=browser_settings
+                        ))
+                        self.log("✓ Used CreateSource API")
 
-            self.log("OBS scene configuration completed")
+                    self.log(f"✓ Created shared overlay source: {shared_overlay_name}")
+
+                    # Wait for source to be fully created
+                    import time
+                    time.sleep(1.0)
+
+                    # Step 5: Add chroma key filter
+                    self.log("Adding chroma key filter...")
+                    chroma_settings = {
+                        "key_color_type": "magenta",
+                        "key_color": 16711935,  # Magenta color value (0xFF00FF)
+                        "similarity": 110,
+                        "smoothness": 80,
+                        "key_color_spill_reduction": 100,
+                        "opacity": 1.0,
+                        "contrast": 0.0,
+                        "brightness": 0.0,
+                        "gamma": 0.0
+                    }
+
+                    try:
+                        # Try newer filter API first
+                        try:
+                            self.obs_ws.call(obsrequests.CreateSourceFilter(
+                                sourceName=shared_overlay_name,
+                                filterName="Chroma Key",
+                                filterKind="chroma_key_filter_v2",
+                                filterSettings=chroma_settings
+                            ))
+                            self.log("✓ Added chroma key filter (v2)")
+                        except Exception as e1:
+                            self.log(f"v2 filter failed ({e1}), trying v1...")
+                            # Fallback to older filter name
+                            self.obs_ws.call(obsrequests.CreateSourceFilter(
+                                sourceName=shared_overlay_name,
+                                filterName="Chroma Key",
+                                filterKind="chroma_key_filter",
+                                filterSettings=chroma_settings
+                            ))
+                            self.log("✓ Added chroma key filter (v1)")
+
+                    except Exception as e:
+                        self.log(f"✗ Could not add chroma key filter: {e}")
+
+                except Exception as e:
+                    self.log(f"✗ Error creating shared overlay source: {e}")
+                    # Don't return False here, continue with scene setup
+            else:
+                self.log(f"✓ Shared overlay source already exists: {shared_overlay_name}")
+
+            # Step 6: Add the shared overlay to each field scene
+            self.log("Adding overlay to scenes...")
+            for field_num in range(1, self.num_fields + 1):
+                scene_name = f"Field {field_num}"
+
+                try:
+                    # Check if the source is already in the scene
+                    try:
+                        scene_items_response = self.obs_ws.call(obsrequests.GetSceneItemList(sceneName=scene_name))
+                        existing_items = [item['sourceName'] for item in scene_items_response.datain['sceneItems']]
+                    except Exception:
+                        # Fallback for older API
+                        existing_items = []
+
+                    if shared_overlay_name not in existing_items:
+                        # Skip Field 1 if we created the source there already
+                        if scene_name == "Field 1" and shared_overlay_name not in existing_sources:
+                            self.log(f"✓ Overlay already in {scene_name} (created there)")
+                        else:
+                            try:
+                                # Try newer API first
+                                self.obs_ws.call(obsrequests.CreateSceneItem(
+                                    sceneName=scene_name,
+                                    sourceName=shared_overlay_name
+                                ))
+                                self.log(f"✓ Added overlay to {scene_name} (CreateSceneItem)")
+                            except Exception as e1:
+                                self.log(f"CreateSceneItem failed ({e1}), trying AddSceneItem...")
+                                # Fallback to older API method
+                                self.obs_ws.call(obsrequests.AddSceneItem(
+                                    sceneName=scene_name,
+                                    sourceName=shared_overlay_name
+                                ))
+                                self.log(f"✓ Added overlay to {scene_name} (AddSceneItem)")
+
+                    else:
+                        self.log(f"✓ Overlay already exists in {scene_name}")
+
+                except Exception as e:
+                    self.log(f"✗ Could not add overlay to {scene_name}: {e}")
+
+            self.log("✅ OBS scene configuration completed successfully!")
             return True
 
         except Exception as e:
-            self.log(f"Error configuring OBS scenes: {e}")
+            self.log(f"✗ Error configuring OBS scenes: {e}")
             return False
 
     def switch_scene(self, field_number):

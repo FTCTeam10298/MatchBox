@@ -121,7 +121,8 @@ python matchbox-cli.py --config config.json
 
 3. Click "Configure OBS Scenes" to auto-create:
    - Field scenes (Field 1, Field 2, etc.)
-   - Browser sources with scoring system overlays
+   - Shared FTC overlay browser source with chroma key filter
+   - Overlay automatically added to all field scenes
 
 ### Operation
 1. Start your FTC scoring system
