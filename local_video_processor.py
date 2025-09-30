@@ -179,6 +179,8 @@ class LocalVideoProcessor:
             return None
 
     async def wait_for_recording_duration(self, required_duration: float, timeout: int = 180):
+        return # FIXME: I think this function is leftover from an old iteration, as the main code already waits the equired duration.  Disable this for now.
+
         """Wait for recording to reach required duration"""
         start_time = time.time()
 
