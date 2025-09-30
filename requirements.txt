@@ -12,5 +12,8 @@ Pillow>=8.0.0
 requests>=2.25.0
 aiohttp>=3.8.0
 
+# mDNS/Zeroconf support
+zeroconf>=0.131.0
+
 # GUI theme (optional, recommended for Linux)
 sv-ttk>=2.0.0

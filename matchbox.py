@@ -33,6 +33,13 @@ import concurrent.futures
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 import socket
 
+# mDNS/Zeroconf support
+try:
+    from zeroconf import ServiceInfo, Zeroconf
+    ZEROCONF_AVAILABLE = True
+except ImportError:
+    ZEROCONF_AVAILABLE = False
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -87,6 +94,10 @@ class MatchBoxCore:
         # Web server
         self.web_server = None
         self.web_thread = None
+
+        # mDNS/Zeroconf service
+        self.zeroconf = None
+        self.service_info = None
 
         # Local video processing
         self.local_video_processor = None
@@ -513,6 +524,9 @@ class MatchBoxCore:
             except Exception as e:
                 self.log(f"❌ Web server test failed: {e}")
 
+            # Register mDNS service for local network discovery
+            self.register_mdns_service()
+
             return True
 
         except Exception as e:
@@ -528,6 +542,87 @@ class MatchBoxCore:
                 self.log("Web server stopped")
             except Exception as e:
                 self.log(f"Error stopping web server: {e}")
+
+    def register_mdns_service(self):
+        """Register mDNS service for local network discovery"""
+        if not ZEROCONF_AVAILABLE:
+            self.log("⚠️ Zeroconf not available - install with: pip install zeroconf")
+            return False
+
+        # Run mDNS registration in a separate thread to avoid event loop conflicts
+        def _register_in_thread():
+            try:
+                # Get local IP address
+                import socket
+                hostname = socket.gethostname()
+                local_ip = socket.gethostbyname(hostname)
+
+                # Use actual network IP instead of localhost
+                # Get the IP that would be used to connect to external hosts
+                try:
+                    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                        s.connect(("8.8.8.8", 80))  # Connect to external IP to find local IP
+                        local_ip = s.getsockname()[0]
+                except:
+                    pass  # Fallback to hostname resolution
+
+                self.log(f"📡 mDNS: Using IP {local_ip}")
+
+                # Create Zeroconf instance in this thread
+                self.zeroconf = Zeroconf()
+
+                # Parse mDNS name to get hostname
+                mdns_name = self.mdns_name
+                if mdns_name.endswith('.local'):
+                    hostname_part = mdns_name[:-6]  # Remove '.local'
+                else:
+                    hostname_part = mdns_name
+
+                # Register HTTP service
+                service_name = f"{hostname_part}._http._tcp.local."
+
+                self.service_info = ServiceInfo(
+                    "_http._tcp.local.",
+                    service_name,
+                    addresses=[socket.inet_aton(local_ip)],
+                    port=self.web_port,
+                    properties={
+                        'path': '/',
+                        'description': f'FIRST MatchBox - {self.event_code}',
+                        'event': self.event_code,
+                        'service': 'matchbox'
+                    },
+                    server=f"{hostname_part}.local."
+                )
+
+                self.zeroconf.register_service(self.service_info)
+                self.log(f"✅ mDNS service registered: http://{mdns_name}:{self.web_port}")
+                self.log(f"📡 Access from network: {local_ip}:{self.web_port}")
+
+            except Exception as e:
+                import traceback
+                self.log(f"❌ Failed to register mDNS service: {type(e).__name__}: {e}")
+                self.log(f"❌ Full traceback: {traceback.format_exc()}")
+
+        # Start registration in background thread
+        mdns_thread = threading.Thread(target=_register_in_thread, daemon=True)
+        mdns_thread.start()
+        return True
+
+    def unregister_mdns_service(self):
+        """Unregister mDNS service"""
+        try:
+            if self.service_info and self.zeroconf:
+                self.zeroconf.unregister_service(self.service_info)
+                self.log("mDNS service unregistered")
+
+            if self.zeroconf:
+                self.zeroconf.close()
+                self.zeroconf = None
+                self.service_info = None
+
+        except Exception as e:
+            self.log(f"Error unregistering mDNS service: {e}")
 
     async def monitor_ftc_websocket(self):
         """Monitor FTC scoring system WebSocket for match events"""
@@ -742,8 +837,9 @@ class MatchBoxCore:
         # Disconnect from OBS
         self.disconnect_from_obs()
 
-        # Stop web server
+        # Stop web server and mDNS service
         self.stop_web_server()
+        self.unregister_mdns_service()
 
         # Stop local video processor
         if self.local_video_processor:
@@ -1076,6 +1172,9 @@ class MatchBoxGUI:
 
         self.log("MatchBox started!")
         self.log(f"Match clips will be available at http://localhost:{config['web_port']}")
+        if ZEROCONF_AVAILABLE:
+            mdns_name = config.get('mdns_name', 'ftcvideo.local')
+            self.log(f"Network access: http://{mdns_name}:{config['web_port']}")
 
     def run_async_monitoring(self):
         """Run async monitoring in separate thread"""
