@@ -30,7 +30,8 @@ import os
 import shutil
 import re
 import concurrent.futures
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+from http.server import HTTPServer, SimpleHTTPRequestHandler, ThreadingHTTPServer
+from socketserver import ThreadingMixIn
 import socket
 
 # mDNS/Zeroconf support
@@ -442,14 +443,44 @@ class MatchBoxCore:
                         super().__init__(*args, directory=directory, **kwargs)
 
                     def log_message(self, format, *args):
-                        # Enable logging for debugging
-                        print(f"HTTP: {format % args}")
+                        # Enable logging for debugging (but suppress routine errors)
+                        message = format % args
+                        if "Broken pipe" not in message and "Connection reset" not in message:
+                            print(f"HTTP: {message}")
+
+                    def address_string(self):
+                        """Override to avoid slow reverse DNS lookups"""
+                        return str(self.client_address[0])
 
                     def end_headers(self):
                         # Add CORS headers
                         self.send_header('Access-Control-Allow-Origin', '*')
                         self.send_header('Cache-Control', 'no-cache')
                         super().end_headers()
+
+                    def handle_one_request(self):
+                        """Handle a single HTTP request with better error handling"""
+                        import time
+                        start_time = time.time()
+                        try:
+                            super().handle_one_request()
+                            duration = time.time() - start_time
+                            if duration > 1.0:  # Log slow requests
+                                print(f"⚠️ Slow HTTP request took {duration:.2f}s")
+                        except (BrokenPipeError, ConnectionResetError):
+                            # Client disconnected - this is normal, don't spam logs
+                            pass
+                        except Exception as e:
+                            # Log other unexpected errors
+                            self.log_error(f"Request handling error: {e}")
+
+                    def copyfile(self, source, outputfile):
+                        """Copy file data with proper error handling for broken pipes"""
+                        try:
+                            super().copyfile(source, outputfile)
+                        except (BrokenPipeError, ConnectionResetError):
+                            # Client disconnected while downloading - normal behavior
+                            pass
                 return MatchClipHandler
 
             def run_server():
@@ -460,8 +491,11 @@ class MatchBoxCore:
 
                     # Create handler class with the specific directory
                     HandlerClass = make_handler(clips_dir_str)
-                    # Bind to all interfaces so network devices can access the serevice
-                    self.web_server = HTTPServer(('0.0.0.0', self.web_port), HandlerClass)
+                    # Use ThreadingHTTPServer for better performance and bind to all interfaces
+                    self.web_server = ThreadingHTTPServer(('0.0.0.0', self.web_port), HandlerClass)
+                    # Prevent the server from hanging on to connections
+                    self.web_server.allow_reuse_address = True
+                    self.web_server.timeout = 30  # 30 second timeout for requests
                     self.web_server.serve_forever()
                 except OSError as e:
                     if "Address already in use" in str(e):
