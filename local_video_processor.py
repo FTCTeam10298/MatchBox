@@ -29,7 +29,7 @@ class LocalVideoProcessor:
         self.output_dir = Path(self.config.get('output_dir', './match_clips')).absolute()
         self.pre_match_buffer = self.config.get('pre_match_buffer_seconds', 10)
         self.post_match_buffer = self.config.get('post_match_buffer_seconds', 5)
-        self.match_duration = self.config.get('match_duration_seconds', 150)  # 2:30 typical FTC match
+        self.match_duration = self.config.get('match_duration_seconds', 158)  # FTC match: 30s auto + 8s transition + 120s teleop
 
         # Create output directory
         self.output_dir.mkdir(exist_ok=True, parents=True)
@@ -156,7 +156,8 @@ class LocalVideoProcessor:
 
             # Wait for recording to have enough content
             required_duration = clip_start + clip_duration + 5  # Extra buffer
-            await self.wait_for_recording_duration(required_duration, timeout=30)
+            # Use longer timeout for full FTC cycle: 30s auto + 8s transition + 150s match + buffer = ~200s
+            await self.wait_for_recording_duration(required_duration, timeout=200)
 
             # Extract clip using FFmpeg
             success = await self.extract_clip_ffmpeg(
@@ -177,7 +178,7 @@ class LocalVideoProcessor:
             logger.error(f"Error extracting clip: {e}")
             return None
 
-    async def wait_for_recording_duration(self, required_duration: float, timeout: int = 30):
+    async def wait_for_recording_duration(self, required_duration: float, timeout: int = 180):
         """Wait for recording to reach required duration"""
         start_time = time.time()
 
@@ -229,14 +230,21 @@ class LocalVideoProcessor:
 
     def parse_match_time(self, match_info: Dict[str, Any]) -> datetime:
         """Parse match start time from match info"""
-        # Try to extract timestamp from match info
+        # Try to extract start timestamp from match info
+        if 'start_timestamp' in match_info:
+            if isinstance(match_info['start_timestamp'], datetime):
+                return match_info['start_timestamp']
+            elif isinstance(match_info['start_timestamp'], (int, float)):
+                return datetime.fromtimestamp(match_info['start_timestamp'])
+
+        # Fallback to legacy timestamp field
         if 'timestamp' in match_info:
             if isinstance(match_info['timestamp'], datetime):
                 return match_info['timestamp']
             elif isinstance(match_info['timestamp'], (int, float)):
                 return datetime.fromtimestamp(match_info['timestamp'])
 
-        # Fallback: use current time
+        # Final fallback: use current time
         return datetime.now()
 
     def generate_match_filename(self, match_info: Dict[str, Any]) -> str:

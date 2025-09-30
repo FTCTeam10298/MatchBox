@@ -370,7 +370,7 @@ class MatchBoxCore:
                     'output_dir': str(self.clips_dir),  # clips_dir is already absolute
                     'pre_match_buffer_seconds': self.config.get('pre_match_buffer_seconds', 10),
                     'post_match_buffer_seconds': self.config.get('post_match_buffer_seconds', 5),
-                    'match_duration_seconds': self.config.get('match_duration_seconds', 150)
+                    'match_duration_seconds': self.config.get('match_duration_seconds', 158)
                 }
 
                 self.local_video_processor = LocalVideoProcessor(config)
@@ -569,28 +569,22 @@ class MatchBoxCore:
                                     self.current_field = field_number
 
                         elif data.get("type") == "START_MATCH":
-                            # Match started - begin clip generation
+                            # Match started - schedule delayed clip generation
                             match_info = data.get("params", {})
                             self.log(f"🎬 Match started: {match_info}")
 
                             # Add timestamp for accurate clip timing
-                            match_info['timestamp'] = time.time()
+                            match_info['start_timestamp'] = time.time()
 
-                            # Debug: Check processor status
-                            self.log(f"🔍 Local video processor available: {self.local_video_processor is not None}")
+                            # Schedule clip generation to start after full match duration
                             if self.local_video_processor:
-                                self.log(f"🔍 Recording path: {self.obs_recording_path}")
-                                self.log(f"🔍 Recording available: {self.local_video_processor.is_recording_available()}")
-
-                            # Trigger clip generation asynchronously
-                            if self.local_video_processor:
-                                self.log("🎬 Starting async clip generation task...")
-                                asyncio.create_task(self.generate_match_clip(match_info))
+                                self.log("🎬 Scheduling delayed clip generation...")
+                                asyncio.create_task(self.generate_match_clip_delayed(match_info))
                             else:
                                 self.log("❌ Local video processor not available for clipping")
 
                         elif data.get("type") == "END_MATCH":
-                            # Match ended - log event (clip should already be processing)
+                            # Match ended - log event (clip generation scheduled from START_MATCH)
                             match_info = data.get("params", {})
                             self.log(f"🏁 Match ended: {match_info}")
 
@@ -615,6 +609,21 @@ class MatchBoxCore:
                 self.log(f"WebSocket error: {e}")
         finally:
             await self.shutdown()
+
+    async def generate_match_clip_delayed(self, match_info):
+        """Generate a match clip after waiting for the full match duration"""
+        # Calculate total time to wait: match duration + post-match buffer + extra safety margin
+        match_duration = self.config.get('match_duration_seconds', 158)  # FTC match duration
+        post_match_buffer = self.config.get('post_match_buffer_seconds', 5)
+        safety_margin = 8  # Extra time for transitions and safety
+
+        total_wait_time = match_duration + post_match_buffer + safety_margin
+
+        self.log(f"🎬 Waiting {total_wait_time} seconds for match to complete before generating clip...")
+        await asyncio.sleep(total_wait_time)
+
+        self.log("🎬 Match duration complete - starting clip generation...")
+        await self.generate_match_clip(match_info)
 
     async def generate_match_clip(self, match_info):
         """Generate a match clip using the local video processor"""
@@ -940,7 +949,7 @@ class MatchBoxGUI:
             row=6, column=1, sticky=tk.W, pady=2)
 
         ttk.Label(video_frame, text="Match duration (seconds):").grid(row=7, column=0, sticky=tk.W, pady=2)
-        self.match_duration_var = tk.StringVar(value="150")
+        self.match_duration_var = tk.StringVar(value="158")
         ttk.Entry(video_frame, textvariable=self.match_duration_var, width=6).grid(
             row=7, column=1, sticky=tk.W, pady=2)
 
@@ -973,7 +982,7 @@ class MatchBoxGUI:
             'web_port': int(self.web_port_var.get()) if self.web_port_var.get().isdigit() else 8000,
             'pre_match_buffer_seconds': int(self.pre_match_buffer_var.get()) if self.pre_match_buffer_var.get().isdigit() else 10,
             'post_match_buffer_seconds': int(self.post_match_buffer_var.get()) if self.post_match_buffer_var.get().isdigit() else 5,
-            'match_duration_seconds': int(self.match_duration_var.get()) if self.match_duration_var.get().isdigit() else 150,
+            'match_duration_seconds': int(self.match_duration_var.get()) if self.match_duration_var.get().isdigit() else 158,
             'field_scene_mapping': {int(k): v.get() for k, v in self.scene_mappings.items()}
         }
         return config
@@ -991,7 +1000,7 @@ class MatchBoxGUI:
         self.web_port_var.set(str(config.get('web_port', 8000)))
         self.pre_match_buffer_var.set(str(config.get('pre_match_buffer_seconds', 10)))
         self.post_match_buffer_var.set(str(config.get('post_match_buffer_seconds', 5)))
-        self.match_duration_var.set(str(config.get('match_duration_seconds', 150)))
+        self.match_duration_var.set(str(config.get('match_duration_seconds', 158)))
 
         # Load scene mappings
         field_scene_mapping = config.get('field_scene_mapping', {})
