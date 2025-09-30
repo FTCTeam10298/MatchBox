@@ -612,6 +612,24 @@ class MatchBoxCore:
                 self.ftc_websocket = websocket
                 self.log("Connected to FTC scoring system WebSocket")
 
+                # Drain initial backlog of old events for 5 seconds
+                self.log("⏳ Draining initial backlog of old events...")
+                backlog_end_time = time.time() + 5.0
+                backlog_count = 0
+
+                while time.time() < backlog_end_time:
+                    try:
+                        message = await asyncio.wait_for(websocket.recv(), timeout=0.5)
+                        backlog_count += 1
+                        # Just discard these messages without processing
+                    except asyncio.TimeoutError:
+                        # No more messages in backlog, continue waiting
+                        continue
+
+                if backlog_count > 0:
+                    self.log(f"🗑️ Discarded {backlog_count} old events from backlog")
+                self.log("✅ Ready to process new FTC events")
+
                 while self.running:
                     try:
                         message = await asyncio.wait_for(websocket.recv(), timeout=1.0)
