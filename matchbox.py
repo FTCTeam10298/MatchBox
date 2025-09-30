@@ -105,7 +105,6 @@ class MatchBoxCore:
 
     def log(self, message):
         """Log message to console and callback"""
-        print(message)
         logger.info(message)
         if self.log_callback:
             self.log_callback(message)
