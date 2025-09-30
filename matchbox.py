@@ -195,8 +195,10 @@ class MatchBoxCore:
                     "url": overlay_url,
                     "width": 1920,
                     "height": 1080,
-                    "fps": 30,
-                    "shutdown": True
+                    "shutdown": False,
+                    "restart_when_active": False,
+                    "reroute_audio": True,  # Enable audio output
+                    "monitor_audio": True   # Monitor audio (for live mixing)
                 }
 
                 try:
