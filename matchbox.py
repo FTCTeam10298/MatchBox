@@ -483,7 +483,8 @@ class MatchBoxCore:
 
                     # Create handler class with the specific directory
                     HandlerClass = make_handler(clips_dir_str)
-                    self.web_server = HTTPServer(('localhost', self.web_port), HandlerClass)
+                    # Bind to all interfaces so network devices can access the serevice
+                    self.web_server = HTTPServer(('0.0.0.0', self.web_port), HandlerClass)
                     self.web_server.serve_forever()
                 except OSError as e:
                     if "Address already in use" in str(e):
