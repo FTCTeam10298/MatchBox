@@ -428,48 +428,12 @@ class MatchBoxCore:
             self.clips_dir.mkdir(exist_ok=True, parents=True)
             clips_dir_str = str(self.clips_dir.absolute())
 
-            # Create index.html FIRST, before starting server
+            # Create initial index.html with existing files scan
             try:
-                index_path = self.clips_dir / "index.html"
-                index_content = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FIRST&reg; MatchBox&trade; - Match Clips</title>
-    <style>
-        body {{ font-family: Arial, sans-serif; margin: 40px; }}
-        h1 {{ color: #0066cc; }}
-        .status {{ padding: 10px; background: #f0f8ff; border-radius: 5px; margin: 20px 0; }}
-        .footer {{ margin-top: 40px; color: #666; font-size: 0.9em; }}
-    </style>
-</head>
-<body>
-    <h1>&#x1F3A5; FIRST&reg; MatchBox&trade;</h1>
-    <div class="status">
-        <h3>Match Clips Server</h3>
-        <p><strong>Status:</strong> Running on port {self.web_port}</p>
-        <p><strong>Event Code:</strong> {self.event_code}</p>
-        <p><strong>Output Directory:</strong> {clips_dir_str}</p>
-    </div>
-
-    <h3>&#x1F4C1; Available Files</h3>
-    <p>Match clips will appear here as they are processed...</p>
-    <ul>
-        <li><a href="/">Directory listing</a> - View all files</li>
-    </ul>
-
-    <div class="footer">
-        <p><em>This web interface provides local access to match clips for referees and field staff.</em></p>
-        <p>Refresh this page to see new match clips as they become available.</p>
-    </div>
-</body>
-</html>"""
-                with open(index_path, 'w', encoding='utf-8') as f:
-                    f.write(index_content)
-                self.log(f"Created index.html at {index_path}")
+                self.create_initial_web_interface()
+                self.log(f"Created index.html with existing files scan")
             except Exception as e:
-                self.log(f"Error creating index.html: {e}")
+                self.log(f"Error creating initial index.html: {e}")
 
             # Custom handler that serves from a specific directory without changing working directory
             def make_handler(directory):
@@ -751,40 +715,38 @@ class MatchBoxCore:
             import traceback
             self.log(f"❌ Full traceback: {traceback.format_exc()}")
 
-    async def update_web_interface_clips(self):
-        """Update web interface to show available clips"""
+    def _scan_video_files(self):
+        """Scan for video files in clips directory"""
+        video_extensions = ('.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm')
+        video_files = []
+
         try:
-            # List all video files in clips directory
-            video_files = []
-            for ext in ['.mp4', '.avi', '.mov', '.mkv']:
-                video_files.extend(self.clips_dir.glob(f'*{ext}'))
+            for file_path in self.clips_dir.iterdir():
+                if file_path.is_file() and file_path.suffix.lower() in video_extensions:
+                    video_files.append(file_path)
+        except Exception as e:
+            print(f"Error scanning for video files: {e}")
 
-            # Sort by modification time (newest first)
-            video_files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+        # Sort files by modification time (newest first)
+        video_files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+        return video_files
 
-            # Update index.html with file list
-            clips_dir_str = str(self.clips_dir.absolute())
+    def _generate_html_content(self, video_files):
+        """Generate HTML content for the web interface"""
+        clips_dir_str = str(self.clips_dir.absolute())
 
-            # Generate file list HTML
-            file_list_html = ""
-            if video_files:
-                file_list_html = "<ul>"
-                for video_file in video_files[:20]:  # Show last 20 clips
-                    file_size = video_file.stat().st_size / (1024 * 1024)  # MB
-                    mod_time = time.strftime('%Y-%m-%d %H:%M:%S',
-                                           time.localtime(video_file.stat().st_mtime))
-                    file_list_html += f'''
-                    <li>
-                        <a href="{video_file.name}" target="_blank">{video_file.name}</a>
-                        <small>({file_size:.1f} MB, {mod_time})</small>
-                    </li>'''
-                file_list_html += "</ul>"
-            else:
-                file_list_html = "<p><em>No match clips available yet...</em></p>"
+        # Generate file list HTML
+        if video_files:
+            file_list_html = "<ul>"
+            for video_file in video_files:
+                file_size = video_file.stat().st_size
+                size_mb = file_size / (1024 * 1024)
+                file_list_html += f'<li><a href="{video_file.name}">{video_file.name}</a> <small>({size_mb:.1f} MB)</small></li>'
+            file_list_html += "</ul>"
+        else:
+            file_list_html = "<p><em>No match clips available yet...</em></p>"
 
-            # Update index.html content
-            index_path = self.clips_dir / "index.html"
-            index_content = f"""<!DOCTYPE html>
+        return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -820,8 +782,24 @@ class MatchBoxCore:
 </body>
 </html>"""
 
+    def create_initial_web_interface(self):
+        """Create initial web interface with existing files (sync version)"""
+        video_files = self._scan_video_files()
+        html_content = self._generate_html_content(video_files)
+
+        index_path = self.clips_dir / "index.html"
+        with open(index_path, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+
+    async def update_web_interface_clips(self):
+        """Update web interface to show available clips"""
+        try:
+            video_files = self._scan_video_files()
+            html_content = self._generate_html_content(video_files)
+
+            index_path = self.clips_dir / "index.html"
             with open(index_path, 'w', encoding='utf-8') as f:
-                f.write(index_content)
+                f.write(html_content)
 
         except Exception as e:
             self.log(f"Error updating web interface: {e}")
