@@ -213,7 +213,6 @@ class MatchBoxCore:
                     self.log(f"✓ Created shared overlay source: {shared_overlay_name}")
 
                     # Wait for source to be fully created
-                    import time
                     time.sleep(1.0)
 
                     # Step 5: Add chroma key filter
@@ -368,7 +367,7 @@ class MatchBoxCore:
                 config = {
                     'output_dir': str(self.clips_dir),  # clips_dir is already absolute
                     'pre_match_buffer_seconds': self.config.get('pre_match_buffer_seconds', 10),
-                    'post_match_buffer_seconds': self.config.get('post_match_buffer_seconds', 5),
+                    'post_match_buffer_seconds': self.config.get('post_match_buffer_seconds', 10),
                     'match_duration_seconds': self.config.get('match_duration_seconds', 158)
                 }
 
@@ -613,7 +612,7 @@ class MatchBoxCore:
         """Generate a match clip after waiting for the full match duration"""
         # Calculate total time to wait: match duration + post-match buffer + extra safety margin
         match_duration = self.config.get('match_duration_seconds', 158)  # FTC match duration
-        post_match_buffer = self.config.get('post_match_buffer_seconds', 5)
+        post_match_buffer = self.config.get('post_match_buffer_seconds', 10)
         safety_margin = 8  # Extra time for transitions and safety
 
         total_wait_time = match_duration + post_match_buffer + safety_margin
@@ -943,7 +942,7 @@ class MatchBoxGUI:
             row=5, column=1, sticky=tk.W, pady=2)
 
         ttk.Label(video_frame, text="Post-match buffer (seconds):").grid(row=6, column=0, sticky=tk.W, pady=2)
-        self.post_match_buffer_var = tk.StringVar(value="5")
+        self.post_match_buffer_var = tk.StringVar(value="10")
         ttk.Entry(video_frame, textvariable=self.post_match_buffer_var, width=6).grid(
             row=6, column=1, sticky=tk.W, pady=2)
 
@@ -980,7 +979,7 @@ class MatchBoxGUI:
             'output_dir': self.output_dir_var.get(),
             'web_port': int(self.web_port_var.get()) if self.web_port_var.get().isdigit() else 8000,
             'pre_match_buffer_seconds': int(self.pre_match_buffer_var.get()) if self.pre_match_buffer_var.get().isdigit() else 10,
-            'post_match_buffer_seconds': int(self.post_match_buffer_var.get()) if self.post_match_buffer_var.get().isdigit() else 5,
+            'post_match_buffer_seconds': int(self.post_match_buffer_var.get()) if self.post_match_buffer_var.get().isdigit() else 10,
             'match_duration_seconds': int(self.match_duration_var.get()) if self.match_duration_var.get().isdigit() else 158,
             'field_scene_mapping': {int(k): v.get() for k, v in self.scene_mappings.items()}
         }
@@ -998,7 +997,7 @@ class MatchBoxGUI:
         self.output_dir_var.set(config.get('output_dir', './match_clips'))
         self.web_port_var.set(str(config.get('web_port', 8000)))
         self.pre_match_buffer_var.set(str(config.get('pre_match_buffer_seconds', 10)))
-        self.post_match_buffer_var.set(str(config.get('post_match_buffer_seconds', 5)))
+        self.post_match_buffer_var.set(str(config.get('post_match_buffer_seconds', 10)))
         self.match_duration_var.set(str(config.get('match_duration_seconds', 158)))
 
         # Load scene mappings
