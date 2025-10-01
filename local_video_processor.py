@@ -4,16 +4,13 @@ Local Video Processor for FIRST® MatchBox™
 Handles real-time clipping from local OBS recording files
 """
 
-import os
-import sys
 import json
 import time
 import asyncio
 import logging
 import subprocess
 from pathlib import Path
-from datetime import datetime, timedelta
-import threading
+from datetime import datetime
 from typing import Optional, Dict, Any
 
 # Configure logging

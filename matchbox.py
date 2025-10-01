@@ -20,19 +20,9 @@ import argparse
 import sys
 import logging
 from pathlib import Path
-import subprocess
-import tempfile
-import uuid
-import cv2
-import numpy as np
 from local_video_processor import LocalVideoProcessor
-import os
-import shutil
-import re
 import concurrent.futures
-from http.server import HTTPServer, SimpleHTTPRequestHandler, ThreadingHTTPServer
-from socketserver import ThreadingMixIn
-import socket
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 # mDNS/Zeroconf support
 try:
