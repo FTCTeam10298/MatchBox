@@ -151,11 +151,6 @@ class LocalVideoProcessor:
 
             logger.info(f"Extracting clip: {clip_start:.1f}s + {clip_duration:.1f}s -> {output_path}")
 
-            # Wait for recording to have enough content
-            required_duration = clip_start + clip_duration + 5  # Extra buffer
-            # Use longer timeout for full FTC cycle: 30s auto + 8s transition + 150s match + buffer = ~200s
-            await self.wait_for_recording_duration(required_duration, timeout=200)
-
             # Extract clip using FFmpeg
             success = await self.extract_clip_ffmpeg(
                 input_path=self.recording_path,
@@ -174,23 +169,6 @@ class LocalVideoProcessor:
         except Exception as e:
             logger.error(f"Error extracting clip: {e}")
             return None
-
-    async def wait_for_recording_duration(self, required_duration: float, timeout: int = 180):
-        return # FIXME: I think this function is leftover from an old iteration, as the main code already waits the equired duration.  Disable this for now.
-
-        """Wait for recording to reach required duration"""
-        start_time = time.time()
-
-        while time.time() - start_time < timeout:
-            current_duration = self.get_recording_duration()
-            if current_duration >= required_duration:
-                logger.info(f"Recording duration sufficient: {current_duration:.1f}s >= {required_duration:.1f}s")
-                return
-
-            logger.info(f"Waiting for recording duration: {current_duration:.1f}s / {required_duration:.1f}s")
-            await asyncio.sleep(2)
-
-        logger.warning(f"Timeout waiting for recording duration: {self.get_recording_duration():.1f}s")
 
     async def extract_clip_ffmpeg(self, input_path: Path, output_path: Path,
                                 start_time: float, duration: float) -> bool:
