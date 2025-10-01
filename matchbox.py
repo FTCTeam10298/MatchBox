@@ -353,16 +353,6 @@ class MatchBoxCore:
         try:
             self.log("🔍 Setting up local video processor...")
 
-            # Check if LocalVideoProcessor was imported successfully
-            try:
-                import tempfile
-                with tempfile.TemporaryDirectory() as temp_dir:
-                    test_processor = LocalVideoProcessor({'output_dir': temp_dir})
-                self.log("✅ LocalVideoProcessor import successful")
-            except Exception as import_error:
-                self.log(f"❌ LocalVideoProcessor import failed: {import_error}")
-                return False
-
             # Get current OBS recording path
             recording_path = self.get_obs_recording_path()
 
@@ -464,13 +454,6 @@ class MatchBoxCore:
                             # Log other unexpected errors
                             self.log_error(f"Request handling error: {e}")
 
-                    def copyfile(self, source, outputfile):
-                        """Copy file data with proper error handling for broken pipes"""
-                        try:
-                            super().copyfile(source, outputfile)
-                        except (BrokenPipeError, ConnectionResetError):
-                            # Client disconnected while downloading - normal behavior
-                            pass
                 return MatchClipHandler
 
             def run_server():
@@ -497,22 +480,6 @@ class MatchBoxCore:
 
             self.web_thread = threading.Thread(target=run_server, daemon=True)
             self.web_thread.start()
-
-            # Give server a moment to start
-            import time
-            time.sleep(1.0)
-
-            # Test the server
-            try:
-                import urllib.request
-                test_url = f"http://localhost:{self.web_port}/index.html"
-                with urllib.request.urlopen(test_url, timeout=2) as response:
-                    if response.getcode() == 200:
-                        self.log("✅ Web server test successful")
-                    else:
-                        self.log(f"❌ Web server test failed: HTTP {response.getcode()}")
-            except Exception as e:
-                self.log(f"❌ Web server test failed: {e}")
 
             # Register mDNS service for local network discovery
             self.register_mdns_service()
