@@ -685,11 +685,6 @@ class MatchBoxCore:
                             else:
                                 self.log("❌ Local video processor not available for clipping")
 
-                        elif data.get("type") == "END_MATCH":
-                            # Match ended - log event (clip generation scheduled from START_MATCH)
-                            match_info = data.get("params", {})
-                            self.log(f"🏁 Match ended: {match_info}")
-
                     except asyncio.TimeoutError:
                         continue
                     except json.JSONDecodeError as e:
