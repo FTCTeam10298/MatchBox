@@ -8,6 +8,7 @@ import sys
 import json
 import asyncio
 import signal
+from typing import cast
 from matchbox import MatchBoxCore
 
 def main():
@@ -24,95 +25,79 @@ Examples:
     )
 
     # Configuration
-    parser.add_argument("--config", "-c",
-                       help="Load configuration from JSON file")
-    parser.add_argument("--save-config",
-                       help="Save current configuration to JSON file")
+    _ = parser.add_argument("--config", "-c", help="Load configuration from JSON file")
+    _ = parser.add_argument("--save-config", help="Save current configuration to JSON file")
 
     # FTC Settings
     ftc_group = parser.add_argument_group("FTC Scoring System")
-    ftc_group.add_argument("--event-code", required=True,
-                          help="FTC Event Code (required)")
-    ftc_group.add_argument("--scoring-host", default="localhost",
-                          help="Scoring system host (default: localhost)")
-    ftc_group.add_argument("--scoring-port", type=int, default=80,
-                          help="Scoring system port (default: 80)")
-    ftc_group.add_argument("--num-fields", type=int, default=2,
-                          help="Number of fields (default: 2)")
+    _ = ftc_group.add_argument("--event-code", required=True, help="FTC Event Code (required)")
+    _ = ftc_group.add_argument("--scoring-host", default="localhost", help="Scoring system host (default: localhost)")
+    _ = ftc_group.add_argument("--scoring-port", type=int, default=80, help="Scoring system port (default: 80)")
+    _ = ftc_group.add_argument("--num-fields", type=int, default=2, help="Number of fields (default: 2)")
 
     # OBS Settings
     obs_group = parser.add_argument_group("OBS Settings")
-    obs_group.add_argument("--obs-host", default="localhost",
-                          help="OBS WebSocket host (default: localhost)")
-    obs_group.add_argument("--obs-port", type=int, default=4455,
-                          help="OBS WebSocket port (default: 4455)")
-    obs_group.add_argument("--obs-password", default="",
-                          help="OBS WebSocket password")
+    _ = obs_group.add_argument("--obs-host", default="localhost", help="OBS WebSocket host (default: localhost)")
+    _ = obs_group.add_argument("--obs-port", type=int, default=4455, help="OBS WebSocket port (default: 4455)")
+    _ = obs_group.add_argument("--obs-password", default="", help="OBS WebSocket password")
 
     # Scene Mapping
     scene_group = parser.add_argument_group("Scene Mapping")
-    scene_group.add_argument("--field1-scene", default="Field 1",
-                           help="Scene name for Field 1 (default: 'Field 1')")
-    scene_group.add_argument("--field2-scene", default="Field 2",
-                           help="Scene name for Field 2 (default: 'Field 2')")
+    _ = scene_group.add_argument("--field1-scene", default="Field 1", help="Scene name for Field 1 (default: 'Field 1')")
+    _ = scene_group.add_argument("--field2-scene", default="Field 2", help="Scene name for Field 2 (default: 'Field 2')")
 
     # Video and Web Settings
     video_group = parser.add_argument_group("Video & Web Settings")
-    video_group.add_argument("--output-dir", default="./match_clips",
-                           help="Output directory for match clips (default: ./match_clips)")
-    video_group.add_argument("--web-port", type=int, default=8000,
-                           help="Local web server port (default: 8000)")
+    _ = video_group.add_argument("--output-dir", default="./match_clips", help="Output directory for match clips (default: ./match_clips)")
+    _ = video_group.add_argument("--web-port", type=int, default=8000, help="Local web server port (default: 8000)")
 
     # Actions
     action_group = parser.add_argument_group("Actions")
-    action_group.add_argument("--configure-obs-only", action="store_true",
-                            help="Only configure OBS scenes and exit")
-    action_group.add_argument("--test-connection", action="store_true",
-                            help="Test connections to OBS and FTC scoring system")
+    _ = action_group.add_argument("--configure-obs-only", action="store_true", help="Only configure OBS scenes and exit")
+    _ = action_group.add_argument("--test-connection", action="store_true", help="Test connections to OBS and FTC scoring system")
 
     # Other
-    parser.add_argument("--verbose", "-v", action="store_true",
-                       help="Enable verbose logging")
+    _ = parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
 
     args = parser.parse_args()
 
     # Build configuration
-    config = {
-        'event_code': args.event_code,
-        'scoring_host': args.scoring_host,
-        'scoring_port': args.scoring_port,
-        'obs_host': args.obs_host,
-        'obs_port': args.obs_port,
-        'obs_password': args.obs_password,
-        'num_fields': args.num_fields,
-        'output_dir': args.output_dir,
-        'web_port': args.web_port,
+    config: dict[str, object] = {
+        'event_code': cast(str, args.event_code),
+        'scoring_host': cast(str, args.scoring_host),
+        'scoring_port': cast(int, args.scoring_port),
+        'obs_host': cast(str, args.obs_host),
+        'obs_port': cast(int, args.obs_port),
+        'obs_password': cast(str, args.obs_password),
+        'num_fields': cast(int, args.num_fields),
+        'output_dir': cast(str, args.output_dir),
+        'web_port': cast(int, args.web_port),
         'field_scene_mapping': {
-            1: args.field1_scene,
-            2: args.field2_scene
+            1: cast(str, args.field1_scene),
+            2: cast(str, args.field2_scene)
         }
     }
 
     # Load config file if specified
-    if args.config:
+    if cast(str | None, args.config):
         try:
-            with open(args.config, 'r') as f:
-                file_config = json.load(f)
+            with open(cast(str, args.config), 'r') as f:
+                file_config: dict[str, object] = cast(dict[str, object], json.load(f))
                 # Merge file config with command line args, giving priority to command line
                 for key in config:
                     if key in file_config and key not in sys.argv:
                         config[key] = file_config[key]
-            print(f"Configuration loaded from {args.config}")
+            print(f"Configuration loaded from {cast(str, args.config)}")
         except Exception as e:
             print(f"Error loading config file: {e}")
             sys.exit(1)
 
     # Save config if requested
-    if args.save_config:
+    if cast(str | None, args.save_config):
         try:
-            with open(args.save_config, 'w') as f:
+            with open(cast(str, args.save_config), 'w') as f:
                 json.dump(config, f, indent=2)
-            print(f"Configuration saved to {args.save_config}")
+            print(f"Configuration saved to {cast(str, args.save_config)}")
             return
         except Exception as e:
             print(f"Error saving config file: {e}")
@@ -122,11 +107,11 @@ Examples:
     matchbox = MatchBoxCore(config)
 
     # Set up logging
-    if args.verbose:
+    if cast(bool, args.verbose):
         import logging
         logging.getLogger().setLevel(logging.DEBUG)
 
-    if args.configure_obs_only:
+    if cast(bool, args.configure_obs_only):
         print("Configuring OBS scenes...")
         if matchbox.configure_obs_scenes():
             print("✅ OBS scenes configured successfully!")
@@ -135,7 +120,7 @@ Examples:
             sys.exit(1)
         return
 
-    if args.test_connection:
+    if cast(bool, args.test_connection):
         print("Testing connections...")
 
         # Test OBS connection
@@ -152,10 +137,10 @@ Examples:
         print(f"Trying to connect to: {ftc_ws_url}")
 
         try:
-            import websockets
+            import websockets.client
             async def test_ftc():
                 try:
-                    async with websockets.connect(ftc_ws_url, timeout=5) as ws:
+                    async with websockets.client.connect(ftc_ws_url, open_timeout=5) as _:
                         print("✅ FTC scoring system connection successful")
                         return True
                 except Exception as e:
@@ -182,13 +167,12 @@ Examples:
     print("Press Ctrl+C to stop")
 
     # Set up signal handler for graceful shutdown
-    def signal_handler(sig, frame):
+    def signal_handler(_sig: int, _frame: object) -> None:
         print("\n🛑 Shutting down MatchBox...")
-        asyncio.create_task(matchbox.shutdown())
         sys.exit(0)
 
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
+    _ = signal.signal(signal.SIGINT, signal_handler)
+    _ = signal.signal(signal.SIGTERM, signal_handler)
 
     try:
         asyncio.run(matchbox.monitor_ftc_websocket())

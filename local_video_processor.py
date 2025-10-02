@@ -11,7 +11,8 @@ import logging
 import subprocess
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import cast
+from collections.abc import Mapping
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -20,22 +21,22 @@ logger = logging.getLogger("local-video-processor")
 class LocalVideoProcessor:
     """Process match clips from local OBS recording files"""
 
-    def __init__(self, config=None):
-        self.config = config or {}
-        self.recording_path = None
-        self.output_dir = Path(self.config.get('output_dir', './match_clips')).absolute()
-        self.pre_match_buffer = self.config.get('pre_match_buffer_seconds', 10)
-        self.post_match_buffer = self.config.get('post_match_buffer_seconds', 5)
-        self.match_duration = self.config.get('match_duration_seconds', 158)  # FTC match: 30s auto + 8s transition + 120s teleop
+    def __init__(self, config: Mapping[str, object] | None = None):
+        self.config: Mapping[str, object] = config or {}
+        self.recording_path: Path | None = None
+        self.output_dir: Path = Path(cast(str, self.config.get('output_dir', './match_clips'))).absolute()
+        self.pre_match_buffer: int = cast(int, self.config.get('pre_match_buffer_seconds', 10))
+        self.post_match_buffer: int = cast(int, self.config.get('post_match_buffer_seconds', 5))
+        self.match_duration: int = cast(int, self.config.get('match_duration_seconds', 158))  # FTC match: 30s auto + 8s transition + 120s teleop
 
         # Create output directory
         self.output_dir.mkdir(exist_ok=True, parents=True)
 
         # Recording monitoring
-        self.recording_monitor_task = None
-        self.is_monitoring = False
-        self.last_file_size = 0
-        self.file_growth_timestamps = []
+        self.recording_monitor_task: asyncio.Task[None] | None = None
+        self.is_monitoring: bool = False
+        self.last_file_size: int = 0
+        self.file_growth_timestamps: list[float] = []
 
     def set_recording_path(self, path: str):
         """Set the path to the OBS recording file"""
@@ -87,8 +88,9 @@ class LocalVideoProcessor:
 
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
             if result.returncode == 0:
-                data = json.loads(result.stdout)
-                duration = float(data['format']['duration'])
+                data: dict[str, object] = cast(dict[str, object], json.loads(result.stdout))
+                format_data = cast(dict[str, object], data['format'])
+                duration = float(cast(float | str, format_data['duration']))
                 return duration
             else:
                 logger.warning(f"ffprobe failed: {result.stderr}")
@@ -98,7 +100,7 @@ class LocalVideoProcessor:
             logger.warning(f"Could not get recording duration: {e}")
             return 0.0
 
-    def calculate_clip_times(self, match_start_time: datetime) -> tuple:
+    def calculate_clip_times(self, match_start_time: datetime) -> tuple[float, float]:
         """Calculate clip start and end times with buffers"""
         # Convert match start time to seconds from recording start
         recording_start = self.get_recording_start_time()
@@ -115,7 +117,7 @@ class LocalVideoProcessor:
 
         return clip_start, clip_duration
 
-    def get_recording_start_time(self) -> Optional[datetime]:
+    def get_recording_start_time(self) -> datetime | None:
         """Estimate recording start time from file metadata"""
         if not self.recording_path or not self.recording_path.exists():
             return None
@@ -128,7 +130,7 @@ class LocalVideoProcessor:
             logger.warning(f"Could not get recording start time: {e}")
             return None
 
-    async def extract_clip(self, match_info: Dict[str, Any]) -> Optional[Path]:
+    async def extract_clip(self, match_info: Mapping[str, object]) -> Path | None:
         """Extract a match clip from the local recording"""
         if not self.is_recording_available():
             logger.warning("Recording file not available for clipping")
@@ -152,6 +154,10 @@ class LocalVideoProcessor:
             logger.info(f"Extracting clip: {clip_start:.1f}s + {clip_duration:.1f}s -> {output_path}")
 
             # Extract clip using FFmpeg
+            if not self.recording_path:
+                logger.error("Recording path is None")
+                return None
+
             success = await self.extract_clip_ffmpeg(
                 input_path=self.recording_path,
                 output_path=output_path,
@@ -192,7 +198,7 @@ class LocalVideoProcessor:
                 stderr=asyncio.subprocess.PIPE
             )
 
-            stdout, stderr = await process.communicate()
+            _, stderr = await process.communicate()
 
             if process.returncode == 0:
                 logger.info("FFmpeg completed successfully")
@@ -205,7 +211,7 @@ class LocalVideoProcessor:
             logger.error(f"Error running FFmpeg: {e}")
             return False
 
-    def parse_match_time(self, match_info: Dict[str, Any]) -> datetime:
+    def parse_match_time(self, match_info: Mapping[str, object]) -> datetime:
         """Parse match start time from match info"""
         # Try to extract start timestamp from match info
         if 'start_timestamp' in match_info:
@@ -224,14 +230,14 @@ class LocalVideoProcessor:
         # Final fallback: use current time
         return datetime.now()
 
-    def generate_match_filename(self, match_info: Dict[str, Any]) -> str:
+    def generate_match_filename(self, match_info: Mapping[str, object]) -> str:
         """Generate filename for match clip"""
         timestamp = self.parse_match_time(match_info)
         time_str = timestamp.strftime("%Y%m%d %H%M%S")
 
         # Extract match details if available
-        match_name = match_info.get('matchName', 'Match_unknown')
-        field_number = match_info.get('field', 'unknown')
+        match_name: str = cast(str, match_info.get('matchName', 'Match_unknown'))
+        field_number: int = cast(int, match_info.get('field', 0))
 
         return f"{match_name} - Field {field_number} - {time_str}"
 
@@ -248,7 +254,7 @@ class LocalVideoProcessor:
         """Stop monitoring recording file"""
         self.is_monitoring = False
         if self.recording_monitor_task:
-            self.recording_monitor_task.cancel()
+            self.recording_monitor_task.cancel()  # pyright: ignore[reportUnusedCallResult]
             self.recording_monitor_task = None
         logger.info("Stopped recording file monitoring")
 
