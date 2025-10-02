@@ -4,32 +4,25 @@ MatchBox is a standalone application that integrates with OBS and the FTC scorin
 - Automatic scene switching based on field events
 - Match video autosplitting and clipping
 - Local web interface for easy access to match clips
-- Integration with clipfarm for video upload
+- Coming soon: Integration with Clipfarm for video upload
 
-_Disclaimer: MatchBox and Clipfarm are (currently) unofficial, community-ran projects.  While we hope to someday have it become an official part of FTC, similar to FRC's Webcast Unit, currently MatchBox and Clipfarm are entirely community-supported._
+> [!IMPORTANT]
+> _MatchBox and Clipfarm are (currently) unofficial, community-ran projects.  While we hope to someday have it become an official part of FTC, similar to FRC's Webcast Unit, currently MatchBox and Clipfarm are entirely community-supported, so please do not bother FIRST with any issues you may encounter._
 
 ## Features
 
-✅ **Automatic Scene Switching**
-- Connects to FTC scoring system WebSocket
-- Automatically switches OBS scenes based on active field
-- Configurable field-to-scene mapping
-
-✅ **OBS Integration**
-- Auto-configures OBS scenes with scoring system overlays
-- WebSocket connection to OBS (localhost:4455 by default)
-- Template setup for consistent streaming
-
-✅ **Local Web Interface**
-- Serves match clips via HTTP
-- Accessible at http://localhost:8000 (configurable)
-- mDNS support for easy access (http://ftcvideo.local)
-- Perfect for refs to review matches without internet
-
-✅ **Match Video Processing**
-- Automatic match detection and splitting
-- Clips saved locally for immediate access
-- Support for multiple video formats
+- **Automatic Scene Switching**: Connects to FTC scoring system, and automatically switches OBS scenes based on active field
+  - Configurable field-to-scene mapping
+- **OBS Integration**: Auto-configures OBS scenes with scoring system overlays
+  - WebSocket connection to OBS (localhost:4455 by default)
+  - Template setup for consistent streaming
+- **Local Web Interface**: Locally serves match clips for easy access by both teams and event staff, even when the events's external Wi-Fi may be slow, unreliable, or even non-existant
+  - Accessible at http://localhost:8000 (configurable)
+  - mDNS support for easy access (http://ftcvideo.local:8000)
+  - Perfect for refs to review matches without internet
+- **Match Video Processing**: Automatic match detection and splitting
+  - Clips saved locally for immediate access
+  - Support for multiple video formats
 
 ## Requirements
 
@@ -50,28 +43,27 @@ pip install sv-ttk
 ```
 
 ### Required System Tools
-- ffmpeg (with ffprobe)
-- yt-dlp (for video downloading)
+- ffmpeg
 
 ## Quick Start
 
 ### GUI Mode (Recommended)
 ```bash
-python matchbox.py
+python3 matchbox.py
 ```
 
 ### CLI Mode
 ```bash
-python matchbox-cli.py --event-code YOUR_EVENT_CODE --obs-password YOUR_OBS_PASSWORD
+python3 matchbox-cli.py --event-code YOUR_EVENT_CODE --obs-password YOUR_OBS_PASSWORD
 ```
 
 ## Configuration
 
 ### GUI Configuration
-1. Launch the GUI: `python matchbox.py`
+1. Launch the GUI: `python3 matchbox.py`
 2. Fill in the Connection Settings tab:
    - **Event Code**: Your FTC event code
-   - **Scoring System Host**: Usually `localhost` or IP of scoring computer
+   - **Scoring System Host**: Usually IP of scoring computer
    - **OBS WebSocket Password**: Set in OBS Tools > WebSocket Server Settings
 3. Configure Scene Mapping tab to match your OBS scene names
 4. Set output directory in Video & Web Settings
@@ -81,12 +73,12 @@ python matchbox-cli.py --event-code YOUR_EVENT_CODE --obs-password YOUR_OBS_PASS
 ### CLI Configuration
 Create a configuration file:
 ```bash
-python matchbox-cli.py --event-code MYEVENT --obs-password mypass --save-config config.json
+python3 matchbox-cli.py --event-code MYEVENT --obs-password mypass --save-config config.json
 ```
 
 Use the configuration file:
 ```bash
-python matchbox-cli.py --config config.json
+python3 matchbox-cli.py --config config.json
 ```
 
 ### Configuration File Format
@@ -125,7 +117,7 @@ python matchbox-cli.py --config config.json
    - Overlay automatically added to all field scenes
 
 ### Operation
-1. Start your FTC scoring system
+1. Start the FTC scoring system
 2. Start OBS and begin streaming/recording
 3. Launch MatchBox (GUI or CLI)
 4. MatchBox will:
@@ -137,7 +129,7 @@ python matchbox-cli.py --config config.json
 ### Accessing Match Clips
 - **Locally**: http://localhost:8000 (or your configured port)
 - **Network**: http://[computer-ip]:8000
-- **mDNS**: http://ftcvideo.local (if supported)
+- **mDNS**: http://ftcvideo.local:8000 (if supported)
 
 Perfect for referees and field staff to review matches instantly!
 
@@ -146,30 +138,30 @@ Perfect for referees and field staff to review matches instantly!
 ### Basic Usage
 ```bash
 # Start with minimal configuration
-python matchbox-cli.py --event-code MYEVENT123 --obs-password mypass
+python3 matchbox-cli.py --event-code MYEVENT123 --obs-password mypass
 
 # Use configuration file
-python matchbox-cli.py --config config.json
+python3 matchbox-cli.py --config config.json
 
 # Test connections without starting
-python matchbox-cli.py --event-code MYEVENT123 --obs-password mypass --test-connection
+python3 matchbox-cli.py --event-code MYEVENT123 --obs-password mypass --test-connection
 
 # Configure OBS scenes only
-python matchbox-cli.py --event-code MYEVENT123 --obs-password mypass --configure-obs-only
+python3 matchbox-cli.py --event-code MYEVENT123 --obs-password mypass --configure-obs-only
 ```
 
 ### Advanced Options
 ```bash
 # Custom scoring system
-python matchbox-cli.py --event-code MYEVENT --obs-password mypass \
+python3 matchbox-cli.py --event-code MYEVENT --obs-password mypass \
   --scoring-host 10.0.0.100 --scoring-port 8080
 
 # Custom scene names
-python matchbox-cli.py --event-code MYEVENT --obs-password mypass \
+python3 matchbox-cli.py --event-code MYEVENT --obs-password mypass \
   --field1-scene "Red Alliance" --field2-scene "Blue Alliance"
 
 # Custom output and web settings
-python matchbox-cli.py --event-code MYEVENT --obs-password mypass \
+python3 matchbox-cli.py --event-code MYEVENT --obs-password mypass \
   --output-dir /path/to/clips --web-port 9000
 ```
 
@@ -199,10 +191,6 @@ python matchbox-cli.py --event-code MYEVENT --obs-password mypass \
 - Test manual scene switching in OBS
 
 ## Architecture
-
-MatchBox combines functionality from:
-- **ftc-obs-autoswitcher**: OBS WebSocket integration and scene switching
-- **match-video-autosplitter**: Video processing and match detection
 
 ### Core Components
 - `MatchBoxCore`: Main application logic
