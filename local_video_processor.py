@@ -6,6 +6,7 @@ Handles real-time clipping from local OBS recording files
 
 import json
 import time
+import sys
 import asyncio
 import logging
 import subprocess
@@ -17,6 +18,24 @@ from collections.abc import Mapping
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("local-video-processor")
+
+
+def get_ffmpeg_path(binary_name: str = 'ffmpeg') -> str:
+    """Get path to bundled ffmpeg binary, or fall back to system PATH"""
+    if getattr(sys, 'frozen', False):
+        # Running in PyInstaller bundle
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        meipass: str | None = getattr(sys, '_MEIPASS', None)
+        if meipass:
+            base_path = Path(meipass)
+            bundled_path = base_path / binary_name
+            if bundled_path.exists():
+                logger.debug(f"Using bundled {binary_name}: {bundled_path}")
+                return str(bundled_path)
+
+    # Fall back to system PATH
+    logger.debug(f"Using system {binary_name}")
+    return binary_name
 
 class LocalVideoProcessor:
     """Process match clips from local OBS recording files"""
@@ -81,7 +100,7 @@ class LocalVideoProcessor:
         try:
             # Use ffprobe to get duration
             cmd = [
-                'ffprobe', '-v', 'quiet', '-print_format', 'json',
+                get_ffmpeg_path('ffprobe'), '-v', 'quiet', '-print_format', 'json',
                 '-show_entries', 'format=duration',
                 str(self.recording_path)
             ]
@@ -181,7 +200,7 @@ class LocalVideoProcessor:
         """Extract clip using FFmpeg"""
         try:
             cmd = [
-                'ffmpeg', '-y',  # Overwrite output files
+                get_ffmpeg_path('ffmpeg'), '-y',  # Overwrite output files
                 '-i', str(input_path),
                 '-ss', str(start_time),
                 '-t', str(duration),
