@@ -860,7 +860,15 @@ class MatchBoxGUI:
 
     def __init__(self, root: tk.Tk) -> None:
         self.root: tk.Tk = root
-        self.root.title("FIRST® MatchBox™")
+
+        # Attempt to load version
+        try:
+            from _version import __version__
+            self.version = __version__
+        except ModuleNotFoundError:
+            self.version: str = "dev"
+
+        self.root.title(f'FIRST® MatchBox™ - v{self.version}')
         self.root.geometry("900x700")
         self.root.resizable(True, True)
 
@@ -908,7 +916,7 @@ class MatchBoxGUI:
         main_frame.pack(fill=tk.BOTH, expand=True)
 
         # Title
-        title_label = ttk.Label(main_frame, text="FIRST® MatchBox™", font=("", 16, "bold"))
+        title_label = ttk.Label(main_frame, text=f'FIRST® MatchBox™ - v{self.version}', font=("", 16, "bold"))
         title_label.pack(pady=(0, 10))
 
         # Create notebook with tabs

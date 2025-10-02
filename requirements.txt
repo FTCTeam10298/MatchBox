@@ -7,3 +7,6 @@ zeroconf>=0.131.0
 
 # GUI theme (optional, recommended for Linux)
 sv-ttk>=2.0.0
+
+# Packaging
+pyinstaller>=6.0.0

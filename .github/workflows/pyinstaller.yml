@@ -1,0 +1,59 @@
+on:
+  push:
+    branches:
+      - master
+  release:
+    types: [published]
+
+jobs:
+  pyinstaller-build-mac:
+    runs-on: macos-latest
+    steps:
+      - name: Create Executable
+        uses: unofficial-rev-port/pyinstaller@v1.2
+        with:
+          python_ver: '3.12'
+          pyinstaller_ver: '==6.6.0'
+          spec: 'matchbox.spec'
+          requirements: 'pyinstaller-build-reqs.txt'
+          clean_checkout: false
+          upload_exe_with_name: 'MatchBox_Mac_Binary'
+      - name: Make DMG
+        uses: unofficial-rev-port/create-dmg-action-fixed-icon@v0.1.2
+        with:
+          name: 'MatchBox'
+          srcdir: './dist/MatchBox.app'
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: 'MatchBox_Mac_DMG'
+          path: './MatchBox.dmg'
+  pyinstaller-build-win:
+    runs-on: windows-latest
+    steps:
+      - name: Create Executable
+        uses: unofficial-rev-port/pyinstaller@v1.2
+        with:
+          python_ver: '3.12'
+          pyinstaller_ver: '==6.6.0'
+          spec: 'matchbox.spec'
+          requirements: 'pyinstaller-build-reqs.txt'
+          clean_checkout: false
+          upload_exe_with_name: 'MatchBox_Windows'
+  pyinstaller-build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create Executable
+        uses: unofficial-rev-port/pyinstaller@v1.2
+        with:
+          python_ver: '3.12'
+          pyinstaller_ver: '==6.6.0'
+          spec: 'matchbox.spec'
+          requirements: 'pyinstaller-build-reqs.txt'
+          clean_checkout: false
+          upload_exe_with_name: 'MatchBox_Linux'
+      - name: Upload version file for testing
+        uses: actions/upload-artifact@v4
+        with:
+          name: 'version'
+          path: './_version.py'
