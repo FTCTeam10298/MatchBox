@@ -1,13 +1,15 @@
-# FIRST® MatchBox™
+# MatchBox™ for *FIRST®* Tech Challenge
 
-MatchBox is a standalone application that integrates with OBS and the FTC scoring system to provide:
+MatchBox is a standalone application that integrates with OBS and the *FIRST®* Tech Challenge scoring system to provide:
 - Automatic scene switching based on field events
 - Match video autosplitting and clipping
 - Local web interface for easy access to match clips
-- Coming soon: Integration with Clipfarm for video upload
+- Coming soon: Automatic video upload
 
 > [!IMPORTANT]
-> _MatchBox and Clipfarm are (currently) unofficial, community-ran projects.  While we hope to someday have it become an official part of FTC, similar to FRC's Webcast Unit, currently MatchBox and Clipfarm are entirely community-supported, so please do not bother FIRST with any issues you may encounter._
+> _MatchBox is (currently) an unofficial, community-ran project.  While we hope to someday have it become an official part of FTC, similar to FRC's Webcast Unit, currently MatchBox is entirely community-supported, so please do not bother *FIRST®* with any issues you may encounter._
+> 
+> *FIRST®, FIRST® Robotics Competition, and FIRST® Tech Challenge, are registered trademarks of FIRST® (<www.firstinspires.org>) which is not overseeing, involved with, or responsible for this activity, product, or service.*
 
 ## Features
 
@@ -29,7 +31,7 @@ MatchBox is a standalone application that integrates with OBS and the FTC scorin
 ### Software Dependencies
 - Python 3.8+
 - OBS Studio with WebSocket plugin enabled
-- FTC Scoring System
+- FTC Scoring System accessible on the network
 
 ### Python Packages
 Install required packages:

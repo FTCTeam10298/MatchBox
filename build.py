@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Build script for FIRST® MatchBox™
+Build script for MatchBox
 Creates standalone executables for Windows, macOS, and Linux using PyInstaller
 """
 
@@ -113,7 +113,7 @@ def create_dist_package():
 def main():
     """Main build process"""
     print("=" * 60)
-    print("FIRST® MatchBox™ Build Script")
+    print("MatchBox™ for FIRST® Tech Challenge - Build Script")
     print("=" * 60)
     print(f"Platform: {platform.system()} {platform.machine()}")
     print(f"Python: {sys.version}")

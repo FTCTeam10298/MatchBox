@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MatchBox CLI - Command line interface for FIRST® MatchBox™
+MatchBox CLI - Command line interface for MatchBox
 """
 
 import argparse
@@ -14,7 +14,7 @@ from matchbox import MatchBoxCore
 def main():
     """Main CLI function"""
     parser = argparse.ArgumentParser(
-        description="FIRST® MatchBox™ CLI",
+        description="MatchBox™ for FIRST® Tech Challenge - CLI",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -158,7 +158,7 @@ Examples:
         return
 
     # Normal operation
-    print("Starting FIRST® MatchBox™...")
+    print("Starting MatchBox™ for FIRST® Tech Challenge...")
     print(f"Event Code: {config['event_code']}")
     print(f"Scoring System: {config['scoring_host']}:{config['scoring_port']}")
     print(f"OBS WebSocket: {config['obs_host']}:{config['obs_port']}")

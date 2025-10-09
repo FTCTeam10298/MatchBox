@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Local Video Processor for FIRST® MatchBox™
+Local Video Processor for MatchBox
 Handles real-time clipping from local OBS recording files
 """
 

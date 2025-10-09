@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-FIRST® MatchBox™
+MatchBox™ for FIRST® Tech Challenge
 Combines OBS scene switching and match video autosplitting functionality
 
 Based on the design document and existing ftc-obs-autoswitcher and match-video-autosplitter code.
@@ -565,7 +565,7 @@ class MatchBoxCore:
                     port=self.web_port,
                     properties={
                         'path': '/',
-                        'description': f'FIRST MatchBox - {self.event_code}',
+                        'description': f'MatchBox - {self.event_code}',
                         'event': self.event_code,
                         'service': 'matchbox'
                     },
@@ -777,7 +777,7 @@ class MatchBoxCore:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FIRST&reg; MatchBox&trade; - Match Clips</title>
+    <title>MatchBox&trade; for FIRST&reg; Tech Challenge - Match Clips</title>
     <style>
         body {{ font-family: Arial, sans-serif; margin: 40px; }}
         h1 {{ color: #0066cc; }}
@@ -789,7 +789,7 @@ class MatchBoxCore:
     <meta http-equiv="refresh" content="30">
 </head>
 <body>
-    <h1>&#x1F3A5; FIRST&reg; MatchBox&trade;</h1>
+    <h1>&#x1F3A5; MatchBox&trade; for <em>FIRST&reg;</em> Tech Challenge</h1>
     <div class="status">
         <h3>Match Clips Server</h3>
         <p><strong>Status:</strong> Running on port {self.web_port}</p>
@@ -804,6 +804,7 @@ class MatchBoxCore:
     <div class="footer">
         <p><em>This web interface provides local access to match clips for referees and field staff.</em></p>
         <p>This page automatically refreshes every 30 seconds to show new clips.</p>
+        <p><em>FIRST&reg;, FIRST&reg; Robotics Competition, and FIRST&reg; Tech Challenge, are registered trademarks of FIRST&reg; (<a href="https://www.firstinspires.org">www.firstinspires.org</a>) which is not overseeing, involved with, or responsible for this activity, product, or service.</em></p>
     </div>
 </body>
 </html>"""
@@ -868,7 +869,7 @@ class MatchBoxGUI:
         except ModuleNotFoundError:
             self.version: str = "dev"
 
-        self.root.title(f'FIRST® MatchBox™ - v{self.version}')
+        self.root.title(f'MatchBox™ for FIRST® Tech Challenge™ - v{self.version}')
         self.root.geometry("900x700")
         self.root.resizable(True, True)
 
@@ -916,8 +917,21 @@ class MatchBoxGUI:
         main_frame.pack(fill=tk.BOTH, expand=True)
 
         # Title
-        title_label = ttk.Label(main_frame, text=f'FIRST® MatchBox™ - v{self.version}', font=("", 16, "bold"))
-        title_label.pack(pady=(0, 10))
+        bg_color: str = ttk.Style().lookup('TFrame', 'background')  # pyright: ignore[reportAny]
+        if not bg_color:
+            title_label = tk.Text(master=main_frame, height=1, wrap="none", relief="flat", borderwidth=0, highlightthickness=0, font=("", 16, "bold"))
+        else:
+            title_label = tk.Text(master=main_frame, height=1, wrap="none", relief="flat", borderwidth=0, highlightthickness=0, font=("", 16, "bold"), background=(bg_color))
+        title_label.tag_configure("regular", font=("", 12))  # pyright: ignore[reportUnusedCallResult]
+        title_label.tag_configure("bold", font=("", 16, "bold"))  # pyright: ignore[reportUnusedCallResult]
+        title_label.tag_configure("bold_italic", font=("", 16, "bold italic"))  # pyright: ignore[reportUnusedCallResult]
+
+        title_label.insert("1.0", "MatchBox™ for ", "bold")
+        title_label.insert("end", "FIRST®", "bold_italic")
+        title_label.insert("end", f" Tech Challenge™ ", "bold")
+        title_label.insert("end", f"v{self.version}", "regular")
+        title_label.config(state="disabled")  # pyright: ignore[reportUnusedCallResult]
+        title_label.pack(pady=(0, 5), padx=(5, 0), fill="x")
 
         # Create notebook with tabs
         notebook = ttk.Notebook(main_frame)
@@ -1268,7 +1282,7 @@ class MatchBoxGUI:
 
 def main() -> None:
     """Main function"""
-    parser = argparse.ArgumentParser(description="FIRST® MatchBox™ - FRC Webcast Unit @ home")
+    parser = argparse.ArgumentParser(description="MatchBox™ for FIRST® Tech Challenge")
     _ = parser.add_argument("--config", "-c", help="Configuration file path")
     _ = parser.add_argument("--cli", action="store_true", help="Run in CLI mode (no GUI)")
     _ = parser.add_argument("--event-code", help="FTC Event Code")

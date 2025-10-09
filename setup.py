@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Setup script for FIRST® MatchBox™
+Setup script for MatchBox
 """
 
 from setuptools import setup
@@ -15,7 +15,7 @@ _ = setup(
     name="first-matchbox",
     version="1.0.0",
     author="FTC Community",
-    description="FIRST® MatchBox™",
+    description="MatchBox™ for FIRST® Tech Challenge",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/your-org/matchbox",

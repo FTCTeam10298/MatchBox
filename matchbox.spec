@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
-PyInstaller spec file for FIRST® MatchBox™
+PyInstaller spec file for MatchBox
 Builds standalone executables for Windows, macOS, and Linux
 """
 import os
@@ -170,7 +170,7 @@ app = BUNDLE(  # pyright: ignore[reportUndefinedVariable]
         'NSPrincipalClass': 'NSApplication',
         'NSAppleScriptEnabled': False,
         'CFBundleIdentifier': 'us.brainstormz.MatchBox',
-        'CFBundleDisplayName': 'FIRST® MatchBox™',
+        'CFBundleDisplayName': 'MatchBox™ for FIRST® Tech Challenge',
         'NSHumanReadableCopyright': 'Copyright © the MatchBox™ development team and contributors.\nThis software is released under the MIT license.',
     },
 )

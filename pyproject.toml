@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "MatchBox"
 dynamic = ["dependencies", "version"]
-description = "FIRST® MatchBox™"
+description = "MatchBox™ for FIRST® Tech Challenge"
 readme = "README.md"
 license = "MIT"
 keywords = ["ftc", "first", "robotics", "obs", "streaming", "video", "autosplit", "websocket"]
