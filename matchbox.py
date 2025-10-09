@@ -17,7 +17,7 @@ from websockets.client import WebSocketClientProtocol
 import obswebsocket
 from obswebsocket import requests as obsrequests
 import tkinter as tk
-from tkinter import ttk, messagebox, scrolledtext, filedialog
+from tkinter import PhotoImage, TclError, ttk, messagebox, scrolledtext, filedialog
 import argparse
 import sys
 import logging
@@ -912,6 +912,7 @@ class MatchBoxGUI:
 
     def create_widgets(self) -> None:
         """Create GUI widgets"""
+
         # Main frame
         main_frame = ttk.Frame(self.root, padding="10")
         main_frame.pack(fill=tk.BOTH, expand=True)
@@ -1359,6 +1360,32 @@ def main() -> None:
                 logger.info("Sun Valley theme not available - install with: pip install sv-ttk")
             except Exception as e:
                 logger.info(f"Could not apply Sun Valley theme: {e}")
+
+        # Hide the splash screen now that the application itself is launching
+        try:
+            import pyi_splash  # pyright: ignore[reportMissingModuleSource]
+            pyi_splash.close()
+        except:
+            pass
+
+        # Attempt to load version
+        try:
+            from _version import __version__
+            version = __version__
+        except ModuleNotFoundError:
+            version: str = "dev"
+
+        # Set application icon
+        try:
+            from pathlib import Path
+            if "dev" in version:
+                icon = PhotoImage(file=Path(__file__).with_name('us.brainstormz.MatchBox.Devel.png'))
+            else:
+                icon = PhotoImage(file=Path(__file__).with_name('us.brainstormz.MatchBox.png'))
+            root.iconphoto(False, icon)
+        except TclError as e:
+            print("Icon loading failed!")
+            print(e)
 
         app = MatchBoxGUI(root)
         root.protocol("WM_DELETE_WINDOW", app.on_closing)

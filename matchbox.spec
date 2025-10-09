@@ -17,8 +17,8 @@ from setuptools_scm import get_version, _cli
 _cli.main(["--force-write-version-files"])
 
 datas, binaries, hiddenimports = collect_all('MatchBox')
-#datas += [('./us.brainstormz.MatchBox.png', '.'),
-#         ('./us.brainstormz.MatchBox.Devel.png', '.')]
+datas += [('./us.brainstormz.MatchBox.png', '.'),
+         ('./us.brainstormz.MatchBox.Devel.png', '.')]
 datas += collect_data_files('sv_ttk')
 
 # Download and bundle ffmpeg binaries
@@ -120,7 +120,6 @@ print("hiddenimports", hiddenimports)
 
 block_cipher = None
 
-
 a = Analysis(  # pyright: ignore[reportUndefinedVariable]
     ['matchbox.py'],
     pathex=[],
@@ -138,14 +137,26 @@ a = Analysis(  # pyright: ignore[reportUndefinedVariable]
 )
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)  # pyright: ignore[reportUndefinedVariable]
 
+splash = Splash(  # pyright: ignore[reportUndefinedVariable]
+    'us.brainstormz.MatchBox.Splash.png',
+    binaries=a.binaries,
+    datas=a.datas,
+    text_pos=None,
+    text_size=12,
+    minify_script=True,
+)
+
 exe = EXE(  # pyright: ignore[reportUndefinedVariable]
     pyz,
     a.scripts,
     a.binaries,
     a.zipfiles,
     a.datas,
+    splash,
+    splash.binaries,
     [],
     name='MatchBox',
+    icon='us.brainstormz.MatchBox.ico',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -163,7 +174,7 @@ exe = EXE(  # pyright: ignore[reportUndefinedVariable]
 app = BUNDLE(  # pyright: ignore[reportUndefinedVariable]
     exe,
     name='MatchBox.app',
-    icon=None, # 'us.brainstormz.MatchBox.icns',
+    icon='us.brainstormz.MatchBox.icns',
     bundle_identifier=None,
     version=get_version(),
     info_plist={
