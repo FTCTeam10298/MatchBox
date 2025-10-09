@@ -137,14 +137,18 @@ a = Analysis(  # pyright: ignore[reportUndefinedVariable]
 )
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)  # pyright: ignore[reportUndefinedVariable]
 
-splash = Splash(  # pyright: ignore[reportUndefinedVariable]
-    'us.brainstormz.MatchBox.Splash.png',
-    binaries=a.binaries,
-    datas=a.datas,
-    text_pos=None,
-    text_size=12,
-    minify_script=True,
-)
+# Splash screen is not supported on macOS
+splash_args = []
+if system != 'Darwin':
+    splash = Splash(  # pyright: ignore[reportUndefinedVariable]
+        'us.brainstormz.MatchBox.Splash.png',
+        binaries=a.binaries,
+        datas=a.datas,
+        text_pos=None,
+        text_size=12,
+        minify_script=True,
+    )
+    splash_args = [splash, splash.binaries]
 
 exe = EXE(  # pyright: ignore[reportUndefinedVariable]
     pyz,
@@ -152,8 +156,7 @@ exe = EXE(  # pyright: ignore[reportUndefinedVariable]
     a.binaries,
     a.zipfiles,
     a.datas,
-    splash,
-    splash.binaries,
+    *splash_args,
     [],
     name='MatchBox',
     icon='us.brainstormz.MatchBox.ico',
