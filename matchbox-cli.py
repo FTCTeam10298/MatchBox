@@ -9,7 +9,7 @@ import json
 import asyncio
 import signal
 from typing import cast
-from matchbox import MatchBoxCore
+from matchbox import MatchBoxConfig, MatchBoxCore
 
 def main():
     """Main CLI function"""
@@ -61,36 +61,32 @@ Examples:
 
     args = parser.parse_args()
 
-    # Build configuration
-    config: dict[str, object] = {
-        'event_code': cast(str, args.event_code),
-        'scoring_host': cast(str, args.scoring_host),
-        'scoring_port': cast(int, args.scoring_port),
-        'obs_host': cast(str, args.obs_host),
-        'obs_port': cast(int, args.obs_port),
-        'obs_password': cast(str, args.obs_password),
-        'num_fields': cast(int, args.num_fields),
-        'output_dir': cast(str, args.output_dir),
-        'web_port': cast(int, args.web_port),
-        'field_scene_mapping': {
-            1: cast(str, args.field1_scene),
-            2: cast(str, args.field2_scene)
-        }
-    }
+    config: MatchBoxConfig = MatchBoxConfig()
 
     # Load config file if specified
-    if cast(str | None, args.config):
+    if cast(str, args.config):
         try:
             with open(cast(str, args.config), 'r') as f:
-                file_config: dict[str, object] = cast(dict[str, object], json.load(f))
-                # Merge file config with command line args, giving priority to command line
-                for key in config:
-                    if key in file_config and key not in sys.argv:
-                        config[key] = file_config[key]
+                config.__dict__.update(json.load(f))
             print(f"Configuration loaded from {cast(str, args.config)}")
         except Exception as e:
             print(f"Error loading config file: {e}")
             sys.exit(1)
+    
+    # Update config from arguments
+    if cast(str, args.event_code): config.event_code = cast(str, args.event_code)
+    if cast(str, args.scoring_host): config.scoring_host = cast(str, args.scoring_host)
+    if cast(int, args.scoring_port): config.scoring_port = cast(int, args.scoring_port)
+    if cast(str, args.obs_host): config.obs_host = cast(str, args.obs_host)
+    if cast(int, args.obs_port): config.obs_port = cast(int, args.obs_port)
+    if cast(str, args.obs_password): config.obs_password = cast(str, args.obs_password)
+    if cast(int, args.num_fields): config.num_fields = cast(int, args.num_fields)
+    if cast(str, args.output_dir): config.output_dir = cast(str, args.output_dir)
+    if cast(int, args.web_port): config.web_port = cast(int, args.web_port)
+    if cast(str, args.field1_scene): config.field_scene_mapping = {
+        1: cast(str, args.field1_scene),
+        2: cast(str, args.field2_scene)
+    }
 
     # Save config if requested
     if cast(str | None, args.save_config):
@@ -133,7 +129,7 @@ Examples:
 
         # Test FTC connection (basic websocket test)
         print("Testing FTC scoring system connection...")
-        ftc_ws_url = f"ws://{config['scoring_host']}:{config['scoring_port']}/stream/display/command/?code={config['event_code']}"
+        ftc_ws_url = f"ws://{config.scoring_host}:{config.scoring_port}/stream/display/command/?code={config.event_code}"
         print(f"Trying to connect to: {ftc_ws_url}")
 
         try:
@@ -159,10 +155,10 @@ Examples:
 
     # Normal operation
     print("Starting MatchBox™ for FIRST® Tech Challenge...")
-    print(f"Event Code: {config['event_code']}")
-    print(f"Scoring System: {config['scoring_host']}:{config['scoring_port']}")
-    print(f"OBS WebSocket: {config['obs_host']}:{config['obs_port']}")
-    print(f"Match clips will be available at: http://localhost:{config['web_port']}")
+    print(f"Event Code: {config.event_code}")
+    print(f"Scoring System: {config.scoring_host}:{config.scoring_port}")
+    print(f"OBS WebSocket: {config.obs_host}:{config.obs_port}")
+    print(f"Match clips will be available at: http://localhost:{config.web_port}")
     print()
     print("Press Ctrl+C to stop")
 

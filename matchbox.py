@@ -47,36 +47,32 @@ logging.basicConfig(
 )
 logger = logging.getLogger("matchbox")
 
+class MatchBoxConfig:
+    def __init__(self):
+        # Initialize all values to their defaults
+        self.event_code: str = ''
+        self.scoring_host: str = 'localhost'
+        self.scoring_port: int = 80
+        self.obs_host: str = 'localhost'
+        self.obs_port: int = 4455
+        self.obs_password: str = ''
+        self.num_fields: int = 2
+        self.output_dir: str = './match_clips'
+        self.web_port: int = 8000
+        self.mdns_name: str = 'ftcvideo.local'
+        self.field_scene_mapping: dict[int, str] = {1: "Field 1", 2: "Field 2"}
+        self.frame_increment: float = 5.0
+        self.max_attempts: int = 30
+        self.pre_match_buffer_seconds: float = 10.0
+        self.post_match_buffer_seconds: float = 10.0
+        self.match_duration_seconds: float = 158.0
+
 class MatchBoxCore:
     """Core MatchBox functionality combining OBS switching and video autosplitting"""
 
-    def __init__(self, config: Mapping[str, object] | None = None):
+    def __init__(self, config: MatchBoxConfig):
         """Initialize MatchBox with configuration"""
-        self.config: Mapping[str, object] = config or {}
-
-        # FTC/OBS Settings
-        self.event_code: str = cast(str, self.config.get('event_code', ''))
-        self.scoring_host: str = cast(str, self.config.get('scoring_host', 'localhost'))
-        self.scoring_port: int = cast(int, self.config.get('scoring_port', 80))
-        self.obs_host: str = cast(str, self.config.get('obs_host', 'localhost'))
-        self.obs_port: int = cast(int, self.config.get('obs_port', 4455))
-        self.obs_password: str = cast(str, self.config.get('obs_password', ''))
-        self.num_fields: int = cast(int, self.config.get('num_fields', 2))
-
-        # Video processing settings
-        self.frame_increment: float = cast(float, self.config.get('frame_increment', 5.0))
-        self.max_attempts: int = cast(int, self.config.get('max_attempts', 30))
-        self.output_dir: Path = Path(cast(str, self.config.get('output_dir', './match_clips'))).absolute()
-
-        # Web server settings
-        self.web_port: int = cast(int, self.config.get('web_port', 8000))
-        self.mdns_name: str = cast(str, self.config.get('mdns_name', 'ftcvideo.local'))
-
-        # Field to scene mapping
-        self.field_scene_mapping: dict[int, str] = cast(
-            dict[int, str],
-            self.config.get('field_scene_mapping', {1: "Field 1", 2: "Field 2"})
-        )
+        self.config: MatchBoxConfig = config
 
         # Initialize connection objects
         self.obs_ws: obswebsocket.obsws | None = None
@@ -104,7 +100,7 @@ class MatchBoxCore:
         self.log_callback: Callable[[str], None] | None = None
 
         # Create output directory with event code subfolder
-        self.clips_dir: Path = self.output_dir / self.event_code
+        self.clips_dir: Path = Path(self.config.output_dir).absolute() / self.config.event_code
         self.clips_dir.mkdir(exist_ok=True, parents=True)
 
     def set_log_callback(self, callback: Callable[[str], None]) -> None:
@@ -120,7 +116,7 @@ class MatchBoxCore:
     def connect_to_obs(self) -> bool:
         """Connect to OBS WebSocket server"""
         try:
-            self.obs_ws = obswebsocket.obsws(self.obs_host, self.obs_port, self.obs_password)
+            self.obs_ws = obswebsocket.obsws(self.config.obs_host, self.config.obs_port, self.config.obs_password)
             self.obs_ws.connect()
             self.log("Connected to OBS WebSocket server")
             return True
@@ -156,7 +152,7 @@ class MatchBoxCore:
 
             # Step 2: Create field scenes FIRST
             self.log("Creating field scenes...")
-            for field_num in range(1, self.num_fields + 1):
+            for field_num in range(1, self.config.num_fields + 1):
                 scene_name = f"Field {field_num}"
                 if scene_name not in existing_scenes:
                     try:
@@ -181,7 +177,7 @@ class MatchBoxCore:
             shared_overlay_name = "FTC Scoring System Overlay"
             if shared_overlay_name not in existing_sources:
                 self.log("Creating shared overlay source...")
-                overlay_url = (f"http://{self.scoring_host}:{self.scoring_port}/event/{self.event_code}/display/"
+                overlay_url = (f"http://{self.config.scoring_host}:{self.config.scoring_port}/event/{self.config.event_code}/display/"
                               f"?type=audience&bindToField=all&scoringBarLocation=bottom&allianceOrientation=standard"
                               f"&liveScores=true&mute=false&muteRandomizationResults=false&fieldStyleTimer=false"
                               f"&overlay=true&overlayColor=%23ff00ff&allianceSelectionStyle=classic&awardsStyle=overlay"
@@ -273,7 +269,7 @@ class MatchBoxCore:
 
             # Step 6: Add the shared overlay to each field scene
             self.log("Adding overlay to scenes...")
-            for field_num in range(1, self.num_fields + 1):
+            for field_num in range(1, self.config.num_fields + 1):
                 scene_name = f"Field {field_num}"
 
                 try:
@@ -367,10 +363,10 @@ class MatchBoxCore:
             if recording_path:
                 # Create local video processor
                 config = {
-                    'output_dir': str(self.clips_dir),  # clips_dir is already absolute
-                    'pre_match_buffer_seconds': self.config.get('pre_match_buffer_seconds', 10),
-                    'post_match_buffer_seconds': self.config.get('post_match_buffer_seconds', 10),
-                    'match_duration_seconds': self.config.get('match_duration_seconds', 158)
+                    'output_dir': self.clips_dir,  # clips_dir is already absolute
+                    'pre_match_buffer_seconds': self.config.pre_match_buffer_seconds,
+                    'post_match_buffer_seconds': self.config.post_match_buffer_seconds,
+                    'match_duration_seconds': self.config.match_duration_seconds
                 }
 
                 self.local_video_processor = LocalVideoProcessor(config)
@@ -393,7 +389,7 @@ class MatchBoxCore:
 
     def switch_scene(self, field_number: int) -> bool:
         """Switch OBS scene based on field number"""
-        if field_number not in self.field_scene_mapping:
+        if field_number not in self.config.field_scene_mapping:
             self.log(f"No scene mapping found for Field {field_number}")
             return False
 
@@ -401,7 +397,7 @@ class MatchBoxCore:
             self.log("Error switching scene: OBS WebSocket not connected")
             return False
 
-        scene_name = self.field_scene_mapping[field_number]
+        scene_name = self.config.field_scene_mapping[field_number]
         try:
             response = self.obs_ws.call(obsrequests.SetCurrentProgramScene(sceneName=scene_name))
             if response.status:
@@ -474,21 +470,21 @@ class MatchBoxCore:
 
             def run_server() -> None:
                 try:
-                    self.log(f"Starting web server on port {self.web_port}")
+                    self.log(f"Starting web server on port {self.config.web_port}")
                     self.log(f"Serving directory: {clips_dir_str}")
-                    self.log(f"Access match clips at http://localhost:{self.web_port}")
+                    self.log(f"Access match clips at http://localhost:{self.config.web_port}")
 
                     # Create handler class with the specific directory
                     HandlerClass = make_handler(clips_dir_str)
                     # Use ThreadingHTTPServer for better performance and bind to all interfaces
-                    self.web_server = ThreadingHTTPServer(('0.0.0.0', self.web_port), HandlerClass)
+                    self.web_server = ThreadingHTTPServer(('0.0.0.0', self.config.web_port), HandlerClass)
                     # Prevent the server from hanging on to connections
                     self.web_server.allow_reuse_address = True
                     self.web_server.timeout = 30  # 30 second timeout for requests
                     self.web_server.serve_forever()
                 except OSError as e:
                     if "Address already in use" in str(e):
-                        self.log(f"Web server port {self.web_port} is already in use")
+                        self.log(f"Web server port {self.config.web_port} is already in use")
                     else:
                         self.log(f"Web server OS error: {e}")
                 except Exception as e:
@@ -549,7 +545,7 @@ class MatchBoxCore:
                 self.zeroconf = Zeroconf()
 
                 # Parse mDNS name to get hostname
-                mdns_name = self.mdns_name
+                mdns_name = self.config.mdns_name
                 if mdns_name.endswith('.local'):
                     hostname_part = mdns_name[:-6]  # Remove '.local'
                 else:
@@ -562,19 +558,19 @@ class MatchBoxCore:
                     "_http._tcp.local.",
                     service_name,
                     addresses=[socket.inet_aton(local_ip)],
-                    port=self.web_port,
+                    port=self.config.web_port,
                     properties={
                         'path': '/',
-                        'description': f'MatchBox - {self.event_code}',
-                        'event': self.event_code,
+                        'description': f'MatchBox - {self.config.event_code}',
+                        'event': self.config.event_code,
                         'service': 'matchbox'
                     },
                     server=f"{hostname_part}.local."
                 )
 
                 self.zeroconf.register_service(self.service_info)
-                self.log(f"✅ mDNS service registered: http://{mdns_name}:{self.web_port}")
-                self.log(f"📡 Access from network: {local_ip}:{self.web_port}")
+                self.log(f"✅ mDNS service registered: http://{mdns_name}:{self.config.web_port}")
+                self.log(f"📡 Access from network: {local_ip}:{self.config.web_port}")
 
             except Exception as e:
                 import traceback
@@ -613,9 +609,9 @@ class MatchBoxCore:
         # Setup local video processing if OBS is recording
         _ = self.setup_local_video_processor()
 
-        ftc_ws_url = f"ws://{self.scoring_host}:{self.scoring_port}/stream/display/command/?code={self.event_code}"
+        ftc_ws_url = f"ws://{self.config.scoring_host}:{self.config.scoring_port}/stream/display/command/?code={self.config.event_code}"
         self.log(f"Connecting to FTC WebSocket: {ftc_ws_url}")
-        self.log(f"Field-scene mapping: {json.dumps(self.field_scene_mapping, indent=2)}")
+        self.log(f"Field-scene mapping: {json.dumps(self.config.field_scene_mapping, indent=2)}")
 
         self.running = True
         try:
@@ -699,11 +695,11 @@ class MatchBoxCore:
     async def generate_match_clip_delayed(self, match_info: dict[str, object]) -> None:
         """Generate a match clip after waiting for the full match duration"""
         # Calculate total time to wait: match duration + post-match buffer + extra safety margin
-        match_duration: int = cast(int, self.config.get('match_duration_seconds', 158))  # FTC match duration
-        post_match_buffer: int = cast(int, self.config.get('post_match_buffer_seconds', 10))
-        safety_margin: int = 8  # Extra time for transitions and safety
+        match_duration: float = self.config.match_duration_seconds
+        post_match_buffer: float = self.config.post_match_buffer_seconds
+        safety_margin: float = 8.0  # Extra time for transitions and safety
 
-        total_wait_time: int = match_duration + post_match_buffer + safety_margin
+        total_wait_time: float = match_duration + post_match_buffer + safety_margin
 
         self.log(f"🎬 Waiting {total_wait_time} seconds for match to complete before generating clip...")
         await asyncio.sleep(total_wait_time)
@@ -792,8 +788,8 @@ class MatchBoxCore:
     <h1>&#x1F3A5; MatchBox&trade; for <em>FIRST&reg;</em> Tech Challenge</h1>
     <div class="status">
         <h3>Match Clips Server</h3>
-        <p><strong>Status:</strong> Running on port {self.web_port}</p>
-        <p><strong>Event Code:</strong> {self.event_code}</p>
+        <p><strong>Status:</strong> Running on port {self.config.web_port}</p>
+        <p><strong>Event Code:</strong> {self.config.event_code}</p>
         <p><strong>Output Directory:</strong> {clips_dir_str}</p>
         <p><strong>Total Clips:</strong> {len(video_files)}</p>
     </div>
@@ -874,38 +870,25 @@ class MatchBoxGUI:
         self.root.resizable(True, True)
 
         self.matchbox: MatchBoxCore | None = None
+        self.config: MatchBoxConfig = MatchBoxConfig()
         self.async_loop: asyncio.AbstractEventLoop | None = None
         self.monitor_task: asyncio.Task[None] | None = None
         self.thread: threading.Thread | None = None
 
-        # Default configuration
-        self.default_config: dict[str, object] = {
-            'event_code': '',
-            'scoring_host': 'localhost',
-            'scoring_port': 80,
-            'obs_host': 'localhost',
-            'obs_port': 4455,
-            'obs_password': '',
-            'num_fields': 2,
-            'output_dir': './match_clips',
-            'web_port': 8000,
-            'field_scene_mapping': {1: "Field 1", 2: "Field 2"}
-        }
-
-        # Initialize instance variables for GUI widgets (set in create_widgets)
-        self.event_code_var: tk.StringVar
-        self.scoring_host_var: tk.StringVar
-        self.scoring_port_var: tk.StringVar
-        self.num_fields_var: tk.StringVar
-        self.obs_host_var: tk.StringVar
-        self.obs_port_var: tk.StringVar
-        self.obs_password_var: tk.StringVar
-        self.scene_mappings: dict[int, tk.StringVar]
-        self.output_dir_var: tk.StringVar
-        self.web_port_var: tk.StringVar
-        self.pre_match_buffer_var: tk.StringVar
-        self.post_match_buffer_var: tk.StringVar
-        self.match_duration_var: tk.StringVar
+        # Initialize instance variables for GUI widgets (set in load_config)
+        self.event_code_var: tk.StringVar = tk.StringVar()
+        self.scoring_host_var: tk.StringVar = tk.StringVar()
+        self.scoring_port_var: tk.StringVar = tk.StringVar()
+        self.num_fields_var: tk.StringVar = tk.StringVar()
+        self.obs_host_var: tk.StringVar = tk.StringVar()
+        self.obs_port_var: tk.StringVar = tk.StringVar()
+        self.obs_password_var: tk.StringVar = tk.StringVar()
+        self.scene_mappings: dict[int, tk.StringVar] = {}
+        self.output_dir_var: tk.StringVar = tk.StringVar()
+        self.web_port_var: tk.StringVar = tk.StringVar()
+        self.pre_match_buffer_var: tk.StringVar = tk.StringVar()
+        self.post_match_buffer_var: tk.StringVar = tk.StringVar()
+        self.match_duration_var: tk.StringVar = tk.StringVar()
 
         self.create_widgets()
         self.load_config()
@@ -991,22 +974,18 @@ class MatchBoxGUI:
             row=0, column=0, columnspan=3, sticky=tk.W, pady=(0, 5))
 
         ttk.Label(conn_frame, text="Event Code:").grid(row=1, column=0, sticky=tk.W, pady=2)
-        self.event_code_var = tk.StringVar()
         ttk.Entry(conn_frame, textvariable=self.event_code_var, width=30).grid(
             row=1, column=1, sticky=tk.W, pady=2)
 
         ttk.Label(conn_frame, text="Scoring System Host:").grid(row=2, column=0, sticky=tk.W, pady=2)
-        self.scoring_host_var = tk.StringVar(value="localhost")
         ttk.Entry(conn_frame, textvariable=self.scoring_host_var, width=30).grid(
             row=2, column=1, sticky=tk.W, pady=2)
 
         ttk.Label(conn_frame, text="Port:").grid(row=2, column=2, sticky=tk.W, pady=2)
-        self.scoring_port_var = tk.StringVar(value="80")
         ttk.Entry(conn_frame, textvariable=self.scoring_port_var, width=6).grid(
             row=2, column=3, sticky=tk.W, pady=2)
 
         ttk.Label(conn_frame, text="Number of Fields:").grid(row=3, column=0, sticky=tk.W, pady=2)
-        self.num_fields_var = tk.StringVar(value="2")
         ttk.Entry(conn_frame, textvariable=self.num_fields_var, width=6).grid(
             row=3, column=1, sticky=tk.W, pady=2)
 
@@ -1015,17 +994,14 @@ class MatchBoxGUI:
             row=4, column=0, columnspan=3, sticky=tk.W, pady=(10, 5))
 
         ttk.Label(conn_frame, text="OBS WebSocket Host:").grid(row=5, column=0, sticky=tk.W, pady=2)
-        self.obs_host_var = tk.StringVar(value="localhost")
         ttk.Entry(conn_frame, textvariable=self.obs_host_var, width=30).grid(
             row=5, column=1, sticky=tk.W, pady=2)
 
         ttk.Label(conn_frame, text="Port:").grid(row=5, column=2, sticky=tk.W, pady=2)
-        self.obs_port_var = tk.StringVar(value="4455")
         ttk.Entry(conn_frame, textvariable=self.obs_port_var, width=6).grid(
             row=5, column=3, sticky=tk.W, pady=2)
 
         ttk.Label(conn_frame, text="Password:").grid(row=6, column=0, sticky=tk.W, pady=2)
-        self.obs_password_var = tk.StringVar()
         ttk.Entry(conn_frame, textvariable=self.obs_password_var, width=30, show="*").grid(
             row=6, column=1, sticky=tk.W, pady=2)
 
@@ -1042,7 +1018,7 @@ class MatchBoxGUI:
         for i in range(1, 3):
             ttk.Label(mapping_frame, text=f"Field {i} Scene:").grid(
                 row=i, column=0, sticky=tk.W, pady=2)
-            scene_var = tk.StringVar(value=f"Field {i}")
+            scene_var = tk.StringVar()
             ttk.Entry(mapping_frame, textvariable=scene_var, width=30).grid(
                 row=i, column=1, sticky=tk.W, pady=2)
             self.scene_mappings[i] = scene_var
@@ -1057,7 +1033,6 @@ class MatchBoxGUI:
             row=0, column=0, columnspan=3, sticky=tk.W, pady=(0, 5))
 
         ttk.Label(video_frame, text="Output Directory:").grid(row=1, column=0, sticky=tk.W, pady=2)
-        self.output_dir_var = tk.StringVar(value="./match_clips")
         ttk.Entry(video_frame, textvariable=self.output_dir_var, width=40).grid(
             row=1, column=1, sticky=tk.W, pady=2)
         ttk.Button(video_frame, text="Browse...", command=self.browse_output_dir).grid(
@@ -1068,7 +1043,6 @@ class MatchBoxGUI:
             row=2, column=0, columnspan=3, sticky=tk.W, pady=(10, 5))
 
         ttk.Label(video_frame, text="Web Server Port:").grid(row=3, column=0, sticky=tk.W, pady=2)
-        self.web_port_var = tk.StringVar(value="8000")
         ttk.Entry(video_frame, textvariable=self.web_port_var, width=6).grid(
             row=3, column=1, sticky=tk.W, pady=2)
 
@@ -1078,17 +1052,14 @@ class MatchBoxGUI:
             row=4, column=0, columnspan=3, sticky=tk.W, pady=(10, 5))
 
         ttk.Label(video_frame, text="Pre-match buffer (seconds):").grid(row=5, column=0, sticky=tk.W, pady=2)
-        self.pre_match_buffer_var = tk.StringVar(value="10")
         ttk.Entry(video_frame, textvariable=self.pre_match_buffer_var, width=6).grid(
             row=5, column=1, sticky=tk.W, pady=2)
 
         ttk.Label(video_frame, text="Post-match buffer (seconds):").grid(row=6, column=0, sticky=tk.W, pady=2)
-        self.post_match_buffer_var = tk.StringVar(value="10")
         ttk.Entry(video_frame, textvariable=self.post_match_buffer_var, width=6).grid(
             row=6, column=1, sticky=tk.W, pady=2)
 
         ttk.Label(video_frame, text="Match duration (seconds):").grid(row=7, column=0, sticky=tk.W, pady=2)
-        self.match_duration_var = tk.StringVar(value="158")
         ttk.Entry(video_frame, textvariable=self.match_duration_var, width=6).grid(
             row=7, column=1, sticky=tk.W, pady=2)
 
@@ -1107,51 +1078,49 @@ class MatchBoxGUI:
         if directory:
             self.output_dir_var.set(directory)
 
-    def get_config(self) -> dict[str, str | int | dict[int, str]]:
-        """Get current configuration from GUI"""
-        config = {
-            'event_code': self.event_code_var.get(),
-            'scoring_host': self.scoring_host_var.get(),
-            'scoring_port': int(self.scoring_port_var.get()) if self.scoring_port_var.get().isdigit() else 80,
-            'obs_host': self.obs_host_var.get(),
-            'obs_port': int(self.obs_port_var.get()) if self.obs_port_var.get().isdigit() else 4455,
-            'obs_password': self.obs_password_var.get(),
-            'num_fields': int(self.num_fields_var.get()) if self.num_fields_var.get().isdigit() else 2,
-            'output_dir': self.output_dir_var.get(),
-            'web_port': int(self.web_port_var.get()) if self.web_port_var.get().isdigit() else 8000,
-            'pre_match_buffer_seconds': int(self.pre_match_buffer_var.get()) if self.pre_match_buffer_var.get().isdigit() else 10,
-            'post_match_buffer_seconds': int(self.post_match_buffer_var.get()) if self.post_match_buffer_var.get().isdigit() else 10,
-            'match_duration_seconds': int(self.match_duration_var.get()) if self.match_duration_var.get().isdigit() else 158,
-            'field_scene_mapping': {int(k): v.get() for k, v in self.scene_mappings.items()}
-        }
-        return config
+    def load_gui_to_config(self):
+        """Set configuration from GUI"""
+        self.config.event_code = self.event_code_var.get()
+        self.config.scoring_host = self.scoring_host_var.get()
+        if self.scoring_port_var.get().isdigit(): self.config.scoring_port = int(self.scoring_port_var.get())
+        self.config.obs_host = self.obs_host_var.get()
+        if self.obs_port_var.get().isdigit(): self.config.obs_port = int(self.obs_port_var.get())
+        self.config.obs_password = self.obs_password_var.get()
+        if self.num_fields_var.get().isdigit(): self.config.num_fields = int(self.num_fields_var.get())
+        self.config.output_dir = self.output_dir_var.get()
+        if self.web_port_var.get().isdigit(): self.config.web_port = int(self.web_port_var.get())
+        if self.pre_match_buffer_var.get().isdigit(): self.config.pre_match_buffer_seconds = int(self.pre_match_buffer_var.get())
+        if self.post_match_buffer_var.get().isdigit(): self.config.post_match_buffer_seconds = int(self.post_match_buffer_var.get())
+        if self.match_duration_var.get().isdigit(): self.config.match_duration_seconds = int(self.match_duration_var.get())
+        self.config.field_scene_mapping = {int(k): v.get() for k, v in self.scene_mappings.items()}
 
-    def load_config_to_gui(self, config: Mapping[str, object]) -> None:
+    def load_config_to_gui(self, config: MatchBoxConfig) -> None:
         """Load configuration into GUI"""
-        self.event_code_var.set(cast(str, config.get('event_code', '')))
-        self.scoring_host_var.set(cast(str, config.get('scoring_host', 'localhost')))
-        self.scoring_port_var.set(str(cast(int, config.get('scoring_port', 80))))
-        self.obs_host_var.set(cast(str, config.get('obs_host', 'localhost')))
-        self.obs_port_var.set(str(cast(int, config.get('obs_port', 4455))))
-        self.obs_password_var.set(cast(str, config.get('obs_password', '')))
-        self.num_fields_var.set(str(cast(int, config.get('num_fields', 2))))
-        self.output_dir_var.set(cast(str, config.get('output_dir', './match_clips')))
-        self.web_port_var.set(str(cast(int, config.get('web_port', 8000))))
-        self.pre_match_buffer_var.set(str(cast(int, config.get('pre_match_buffer_seconds', 10))))
-        self.post_match_buffer_var.set(str(cast(int, config.get('post_match_buffer_seconds', 10))))
-        self.match_duration_var.set(str(cast(int, config.get('match_duration_seconds', 158))))
+        self.event_code_var.set(config.event_code)
+        self.scoring_host_var.set(config.scoring_host)
+        self.scoring_port_var.set(str(config.scoring_port))
+        self.obs_host_var.set(config.obs_host)
+        self.obs_port_var.set(str(config.obs_port))
+        self.obs_password_var.set(config.obs_password)
+        self.num_fields_var.set(str(config.num_fields))
+        self.output_dir_var.set(config.output_dir)
+        self.web_port_var.set(str(config.web_port))
+        self.pre_match_buffer_var.set(str(config.pre_match_buffer_seconds))
+        self.post_match_buffer_var.set(str(config.post_match_buffer_seconds))
+        self.match_duration_var.set(str(config.match_duration_seconds))
 
         # Load scene mappings
-        field_scene_mapping = cast(dict[int, str], config.get('field_scene_mapping', {}))
+        field_scene_mapping = config.field_scene_mapping
         for field_num, scene_var in self.scene_mappings.items():
             scene_var.set(field_scene_mapping.get(field_num, f"Field {field_num}"))
 
     def save_config(self) -> None:
         """Save configuration to file"""
-        config = self.get_config()
         try:
+            # First load current GUI values into config
+            self.load_gui_to_config()
             with open("matchbox_config.json", "w") as f:
-                json.dump(config, f, indent=2)
+                json.dump(vars(self.config), f, indent=2)
             self.log("Configuration saved to matchbox_config.json")
         except Exception as e:
             self.log(f"Error saving configuration: {e}")
@@ -1161,25 +1130,27 @@ class MatchBoxGUI:
         """Load configuration from file"""
         try:
             with open("matchbox_config.json", "r") as f:
-                config: dict[str, object] = cast(dict[str, object], json.load(f))
-            self.load_config_to_gui(config)
+                file = json.load(f)
+                self.config.__dict__.update(file)
+                # Fix field_scene_mapping keys to be integers (JSON deserializes them as strings)
+                if 'field_scene_mapping' in file:
+                    self.config.field_scene_mapping = {int(k): v for k, v in file['field_scene_mapping'].items()}
+            self.load_config_to_gui(self.config)
             self.log("Configuration loaded from matchbox_config.json")
         except FileNotFoundError:
-            self.load_config_to_gui(self.default_config)
-            self.log("No configuration file found, using defaults")
+            self.log("No configuration file found")
         except Exception as e:
-            self.load_config_to_gui(self.default_config)
             self.log(f"Error loading configuration: {e}")
 
     def configure_obs_scenes(self) -> None:
         """Configure OBS scenes"""
-        config = self.get_config()
-        if not config['event_code']:
+        self.load_gui_to_config()
+        if not self.config.event_code:
             _ = messagebox.showerror("Error", "Event code is required")
             return
 
         # Create temporary MatchBox instance just for OBS configuration
-        temp_matchbox = MatchBoxCore(config)
+        temp_matchbox = MatchBoxCore(self.config)
         temp_matchbox.set_log_callback(self.log)
 
         if temp_matchbox.configure_obs_scenes():
@@ -1191,14 +1162,14 @@ class MatchBoxGUI:
 
     def start_matchbox(self) -> None:
         """Start MatchBox operation"""
-        config = self.get_config()
+        self.load_gui_to_config()
 
-        if not config['event_code']:
+        if not self.config.event_code:
             _ = messagebox.showerror("Error", "Event code is required")
             return
 
         # Create MatchBox instance
-        self.matchbox = MatchBoxCore(config)
+        self.matchbox = MatchBoxCore(self.config)
         self.matchbox.set_log_callback(self.log)
 
         # Create new event loop
@@ -1215,10 +1186,10 @@ class MatchBoxGUI:
         _ = self.status_var.set("Status: Running 🟢")
 
         self.log("MatchBox started!")
-        self.log(f"Match clips will be available at http://localhost:{config['web_port']}")
+        self.log(f"Match clips will be available at http://localhost:{self.config.web_port}")
         if ZEROCONF_AVAILABLE:
-            mdns_name = config.get('mdns_name', 'ftcvideo.local')
-            self.log(f"Network access: http://{mdns_name}:{config['web_port']}")
+            mdns_name = self.config.mdns_name
+            self.log(f"Network access: http://{mdns_name}:{self.config.web_port}")
 
     def run_async_monitoring(self) -> None:
         """Run async monitoring in separate thread"""
@@ -1296,32 +1267,32 @@ def main() -> None:
     args = parser.parse_args()
 
     # Load configuration
-    config: dict[str, object] = {}
-    if cast(str | None, args.config):
+    config: MatchBoxConfig = MatchBoxConfig()
+    if cast(str, args.config):
         try:
             with open(cast(str, args.config), 'r') as f:
-                config = cast(dict[str, object], json.load(f))
+                config.__dict__.update(json.load(f))
         except Exception as e:
             print(f"Error loading config file: {e}")
             sys.exit(1)
 
     # Override config with command line arguments
-    if cast(str | None, args.event_code):
-        config['event_code'] = cast(str, args.event_code)
+    if cast(str, args.event_code):
+        config.event_code = cast(str, args.event_code)
     if cast(str, args.scoring_host) != "localhost":
-        config['scoring_host'] = cast(str, args.scoring_host)
+        config.scoring_host = cast(str, args.scoring_host)
     if cast(int, args.scoring_port) != 80:
-        config['scoring_port'] = cast(int, args.scoring_port)
+        config.scoring_port = cast(int, args.scoring_port)
     if cast(str, args.obs_host) != "localhost":
-        config['obs_host'] = cast(str, args.obs_host)
+        config.obs_host = cast(str, args.obs_host)
     if cast(int, args.obs_port) != 4455:
-        config['obs_port'] = cast(int, args.obs_port)
-    if cast(str | None, args.obs_password):
-        config['obs_password'] = cast(str, args.obs_password)
+        config.obs_port = cast(int, args.obs_port)
+    if cast(str, args.obs_password):
+        config.obs_password = cast(str, args.obs_password)
 
     if cast(bool, args.cli):
         # CLI mode
-        if not config.get('event_code'):
+        if not config.event_code:
             print("Event code is required")
             sys.exit(1)
 
@@ -1377,7 +1348,6 @@ def main() -> None:
 
         # Set application icon
         try:
-            from pathlib import Path
             if "dev" in version:
                 icon = PhotoImage(file=Path(__file__).with_name('us.brainstormz.MatchBox.Devel.png'))
             else:
@@ -1390,8 +1360,9 @@ def main() -> None:
         app = MatchBoxGUI(root)
         root.protocol("WM_DELETE_WINDOW", app.on_closing)
 
-        # Load config if provided
-        if config:
+        # Load config if provided via command line
+        # Only override GUI config if a config file was explicitly specified
+        if args.config:
             app.load_config_to_gui(config)
 
         root.mainloop()
