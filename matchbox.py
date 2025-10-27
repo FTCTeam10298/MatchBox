@@ -855,7 +855,7 @@ class MatchBoxCore:
 class MatchBoxGUI:
     """Tkinter GUI for MatchBox"""
 
-    def __init__(self, root: tk.Tk) -> None:
+    def __init__(self, root: tk.Tk, config: MatchBoxConfig) -> None:
         self.root: tk.Tk = root
 
         # Attempt to load version
@@ -870,7 +870,7 @@ class MatchBoxGUI:
         self.root.resizable(True, True)
 
         self.matchbox: MatchBoxCore | None = None
-        self.config: MatchBoxConfig = MatchBoxConfig()
+        self.config: MatchBoxConfig = config
         self.async_loop: asyncio.AbstractEventLoop | None = None
         self.monitor_task: asyncio.Task[None] | None = None
         self.thread: threading.Thread | None = None
@@ -891,7 +891,7 @@ class MatchBoxGUI:
         self.match_duration_var: tk.StringVar = tk.StringVar()
 
         self.create_widgets()
-        self.load_config()
+        self.load_config_to_gui(self.config)
 
     def create_widgets(self) -> None:
         """Create GUI widgets"""
@@ -1126,22 +1126,6 @@ class MatchBoxGUI:
             self.log(f"Error saving configuration: {e}")
             _ = messagebox.showerror("Error", f"Failed to save configuration: {e}")
 
-    def load_config(self) -> None:
-        """Load configuration from file"""
-        try:
-            with open("matchbox_config.json", "r") as f:
-                file = json.load(f)
-                self.config.__dict__.update(file)
-                # Fix field_scene_mapping keys to be integers (JSON deserializes them as strings)
-                if 'field_scene_mapping' in file:
-                    self.config.field_scene_mapping = {int(k): v for k, v in file['field_scene_mapping'].items()}
-            self.load_config_to_gui(self.config)
-            self.log("Configuration loaded from matchbox_config.json")
-        except FileNotFoundError:
-            self.log("No configuration file found")
-        except Exception as e:
-            self.log(f"Error loading configuration: {e}")
-
     def configure_obs_scenes(self) -> None:
         """Configure OBS scenes"""
         self.load_gui_to_config()
@@ -1271,10 +1255,28 @@ def main() -> None:
     if cast(str, args.config):
         try:
             with open(cast(str, args.config), 'r') as f:
-                config.__dict__.update(json.load(f))
+                file = json.load(f)
+                config.__dict__.update(file)
+                # Fix field_scene_mapping keys to be integers (JSON deserializes them as strings)
+                if 'field_scene_mapping' in file:
+                    config.field_scene_mapping = {int(k): v for k, v in file['field_scene_mapping'].items()}
+            logger.info("Configuration loaded from" + cast(str, args.config))
         except Exception as e:
             print(f"Error loading config file: {e}")
             sys.exit(1)
+    else:
+        try:
+            with open("matchbox_config.json", "r") as f:
+                file = json.load(f)
+                config.__dict__.update(file)
+                # Fix field_scene_mapping keys to be integers (JSON deserializes them as strings)
+                if 'field_scene_mapping' in file:
+                    config.field_scene_mapping = {int(k): v for k, v in file['field_scene_mapping'].items()}
+            logger.info("Configuration loaded from matchbox_config.json")
+        except FileNotFoundError:
+            logger.error("No configuration file found")
+        except Exception as e:
+            logger.error(f"Error loading configuration: {e}")
 
     # Override config with command line arguments
     if cast(str, args.event_code):
@@ -1357,13 +1359,8 @@ def main() -> None:
             print("Icon loading failed!")
             print(e)
 
-        app = MatchBoxGUI(root)
+        app = MatchBoxGUI(root, config)
         root.protocol("WM_DELETE_WINDOW", app.on_closing)
-
-        # Load config if provided via command line
-        # Only override GUI config if a config file was explicitly specified
-        if args.config:
-            app.load_config_to_gui(config)
 
         root.mainloop()
 

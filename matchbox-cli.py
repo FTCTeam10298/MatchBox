@@ -61,17 +61,33 @@ Examples:
 
     args = parser.parse_args()
 
+    # Load configuration
     config: MatchBoxConfig = MatchBoxConfig()
-
-    # Load config file if specified
     if cast(str, args.config):
         try:
             with open(cast(str, args.config), 'r') as f:
-                config.__dict__.update(json.load(f))
-            print(f"Configuration loaded from {cast(str, args.config)}")
+                file = json.load(f)
+                config.__dict__.update(file)
+                # Fix field_scene_mapping keys to be integers (JSON deserializes them as strings)
+                if 'field_scene_mapping' in file:
+                    config.field_scene_mapping = {int(k): v for k, v in file['field_scene_mapping'].items()}
+            print("Configuration loaded from" + cast(str, args.config))
         except Exception as e:
             print(f"Error loading config file: {e}")
             sys.exit(1)
+    else:
+        try:
+            with open("matchbox_config.json", "r") as f:
+                file = json.load(f)
+                config.__dict__.update(file)
+                # Fix field_scene_mapping keys to be integers (JSON deserializes them as strings)
+                if 'field_scene_mapping' in file:
+                    config.field_scene_mapping = {int(k): v for k, v in file['field_scene_mapping'].items()}
+            print("Configuration loaded from matchbox_config.json")
+        except FileNotFoundError:
+            print("No configuration file found")
+        except Exception as e:
+            print(f"Error loading configuration: {e}")
     
     # Update config from arguments
     if cast(str, args.event_code): config.event_code = cast(str, args.event_code)
