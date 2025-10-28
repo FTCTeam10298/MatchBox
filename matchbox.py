@@ -26,16 +26,7 @@ from local_video_processor import LocalVideoProcessor
 import concurrent.futures
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable, cast, override
-from collections.abc import Mapping
-
-# mDNS/Zeroconf support
-try:
-    from zeroconf import ServiceInfo, Zeroconf
-    ZEROCONF_AVAILABLE = True
-except ImportError:
-    ZEROCONF_AVAILABLE = False  # pyright: ignore[reportConstantRedefinition]
-    ServiceInfo = None  # type: ignore[misc,assignment]
-    Zeroconf = None  # type: ignore[misc,assignment]
+from zeroconf import ServiceInfo, Zeroconf
 
 # Configure logging
 logging.basicConfig(
@@ -89,8 +80,8 @@ class MatchBoxCore:
         self.web_thread: threading.Thread | None = None
 
         # mDNS/Zeroconf service
-        self.zeroconf: Any | None = None
-        self.service_info: Any | None = None
+        self.zeroconf: Zeroconf | None = None
+        self.service_info: ServiceInfo | None = None
 
         # Local video processing
         self.local_video_processor: LocalVideoProcessor | None = None
@@ -525,16 +516,9 @@ class MatchBoxCore:
 
     def register_mdns_service(self) -> bool:
         """Register mDNS service for local network discovery"""
-        if not ZEROCONF_AVAILABLE:
-            self.log("⚠️ Zeroconf not available - install with: pip install zeroconf")
-            return False
 
         # Run mDNS registration in a separate thread to avoid event loop conflicts
         def _register_in_thread() -> None:
-            # At this point, ZEROCONF_AVAILABLE is True, so imports succeeded
-            assert Zeroconf is not None
-            assert ServiceInfo is not None
-
             try:
                 # Get local IP address
                 import socket
@@ -1182,9 +1166,8 @@ class MatchBoxGUI:
 
         self.log("MatchBox started!")
         self.log(f"Match clips will be available at http://localhost:{self.config.web_port}")
-        if ZEROCONF_AVAILABLE:
-            mdns_name = self.config.mdns_name
-            self.log(f"Network access: http://{mdns_name}:{self.config.web_port}")
+        mdns_name = self.config.mdns_name
+        self.log(f"Network access: http://{mdns_name}:{self.config.web_port}")
 
     def run_async_monitoring(self) -> None:
         """Run async monitoring in separate thread"""
