@@ -1301,7 +1301,7 @@ def main() -> None:
                     config.field_scene_mapping = {int(k): v for k, v in file['field_scene_mapping'].items()}
             logger.info("Configuration loaded from matchbox_config.json")
         except FileNotFoundError:
-            logger.error("No configuration file found")
+            logger.warning("No configuration file found")
         except Exception as e:
             logger.error(f"Error loading configuration: {e}")
 
