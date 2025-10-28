@@ -1227,6 +1227,7 @@ class MatchBoxGUI:
         _ = self.log_text.insert(tk.END, f"{time.strftime('%H:%M:%S')} - {message}\n")
         _ = self.log_text.see(tk.END)
         _ = self.log_text.config(state=tk.DISABLED)
+        _ = self.log_text.update_idletasks()  # Force GUI refresh to prevent text disappearing
 
     def on_closing(self) -> None:
         """Handle window close"""
