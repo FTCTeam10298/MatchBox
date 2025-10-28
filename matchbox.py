@@ -53,9 +53,9 @@ class MatchBoxConfig:
         self.field_scene_mapping: dict[int, str] = {1: "Field 1", 2: "Field 2"}
         self.frame_increment: float = 5.0
         self.max_attempts: int = 30
-        self.pre_match_buffer_seconds: float = 10.0
-        self.post_match_buffer_seconds: float = 10.0
-        self.match_duration_seconds: float = 158.0
+        self.pre_match_buffer_seconds: int = 10
+        self.post_match_buffer_seconds: int = 10
+        self.match_duration_seconds: int = 158
 
 class MatchBoxCore:
     """Core MatchBox functionality combining OBS switching and video autosplitting"""
@@ -845,6 +845,12 @@ class MatchBoxCore:
 
         self.log("MatchBox shutdown complete")
 
+# Function to validate integer input
+# From https://www.tutorialkart.com/python/tkinter/how-to-allow-only-integer-in-entry-widget-in-tkinter-python/
+def validate_input(P: str):
+    if P.isdigit() or P == "":
+        return True
+    return False
 
 class MatchBoxGUI:
     """Tkinter GUI for MatchBox"""
@@ -872,16 +878,16 @@ class MatchBoxGUI:
         # Initialize instance variables for GUI widgets (set in load_config)
         self.event_code_var: tk.StringVar = tk.StringVar()
         self.scoring_host_var: tk.StringVar = tk.StringVar()
-        self.scoring_port_var: tk.StringVar = tk.StringVar()
+        self.scoring_port_var: tk.IntVar = tk.IntVar()
         self.obs_host_var: tk.StringVar = tk.StringVar()
-        self.obs_port_var: tk.StringVar = tk.StringVar()
+        self.obs_port_var: tk.IntVar = tk.IntVar()
         self.obs_password_var: tk.StringVar = tk.StringVar()
         self.scene_mappings: dict[int, tk.StringVar] = {}
         self.output_dir_var: tk.StringVar = tk.StringVar()
-        self.web_port_var: tk.StringVar = tk.StringVar()
-        self.pre_match_buffer_var: tk.StringVar = tk.StringVar()
-        self.post_match_buffer_var: tk.StringVar = tk.StringVar()
-        self.match_duration_var: tk.StringVar = tk.StringVar()
+        self.web_port_var: tk.IntVar = tk.IntVar()
+        self.pre_match_buffer_var: tk.IntVar = tk.IntVar()
+        self.post_match_buffer_var: tk.IntVar = tk.IntVar()
+        self.match_duration_var: tk.IntVar = tk.IntVar()
 
         self.create_widgets()
         self.load_config_to_gui(self.config)
@@ -909,6 +915,8 @@ class MatchBoxGUI:
         title_label.insert("end", f"v{self.version}", "regular")
         title_label.config(state="disabled")  # pyright: ignore[reportUnusedCallResult]
         title_label.pack(pady=(0, 5), padx=(5, 0), fill="x")
+
+        self.vcmd: str = self.root.register(validate_input)
 
         # Create notebook with tabs
         notebook = ttk.Notebook(main_frame)
@@ -999,7 +1007,7 @@ class MatchBoxGUI:
             row=2, column=1, sticky=tk.W, pady=2)
 
         ttk.Label(conn_frame, text="Port:").grid(row=2, column=2, sticky=tk.W, pady=2)
-        ttk.Entry(conn_frame, textvariable=self.scoring_port_var, width=6).grid(
+        ttk.Entry(conn_frame, textvariable=self.scoring_port_var, width=6, validate="key", validatecommand=(self.vcmd, "%P")).grid(
             row=2, column=3, sticky=tk.W, pady=2)
 
         # OBS Settings
@@ -1011,7 +1019,7 @@ class MatchBoxGUI:
             row=4, column=1, sticky=tk.W, pady=2)
 
         ttk.Label(conn_frame, text="Port:").grid(row=4, column=2, sticky=tk.W, pady=2)
-        ttk.Entry(conn_frame, textvariable=self.obs_port_var, width=6).grid(
+        ttk.Entry(conn_frame, textvariable=self.obs_port_var, width=6, validate="key", validatecommand=(self.vcmd, "%P")).grid(
             row=4, column=3, sticky=tk.W, pady=2)
 
         ttk.Label(conn_frame, text="Password:").grid(row=5, column=0, sticky=tk.W, pady=2)
@@ -1060,7 +1068,7 @@ class MatchBoxGUI:
             row=2, column=0, columnspan=3, sticky=tk.W, pady=(10, 5))
 
         ttk.Label(video_frame, text="Web Server Port:").grid(row=3, column=0, sticky=tk.W, pady=2)
-        ttk.Entry(video_frame, textvariable=self.web_port_var, width=6).grid(
+        ttk.Entry(video_frame, textvariable=self.web_port_var, width=6, validate="key", validatecommand=(self.vcmd, "%P")).grid(
             row=3, column=1, sticky=tk.W, pady=2)
 
         # Info label
@@ -1069,15 +1077,15 @@ class MatchBoxGUI:
             row=4, column=0, columnspan=3, sticky=tk.W, pady=(10, 5))
 
         ttk.Label(video_frame, text="Pre-match buffer (seconds):").grid(row=5, column=0, sticky=tk.W, pady=2)
-        ttk.Entry(video_frame, textvariable=self.pre_match_buffer_var, width=6).grid(
+        ttk.Entry(video_frame, textvariable=self.pre_match_buffer_var, width=6, validate="key", validatecommand=(self.vcmd, "%P")).grid(
             row=5, column=1, sticky=tk.W, pady=2)
 
         ttk.Label(video_frame, text="Post-match buffer (seconds):").grid(row=6, column=0, sticky=tk.W, pady=2)
-        ttk.Entry(video_frame, textvariable=self.post_match_buffer_var, width=6).grid(
+        ttk.Entry(video_frame, textvariable=self.post_match_buffer_var, width=6, validate="key", validatecommand=(self.vcmd, "%P")).grid(
             row=6, column=1, sticky=tk.W, pady=2)
 
         ttk.Label(video_frame, text="Match duration (seconds):").grid(row=7, column=0, sticky=tk.W, pady=2)
-        ttk.Entry(video_frame, textvariable=self.match_duration_var, width=6).grid(
+        ttk.Entry(video_frame, textvariable=self.match_duration_var, width=6, validate="key", validatecommand=(self.vcmd, "%P")).grid(
             row=7, column=1, sticky=tk.W, pady=2)
 
         info_text = ("Match clips will be available at http://localhost:PORT\n"
@@ -1099,30 +1107,30 @@ class MatchBoxGUI:
         """Set configuration from GUI"""
         self.config.event_code = self.event_code_var.get()
         self.config.scoring_host = self.scoring_host_var.get()
-        if self.scoring_port_var.get().isdigit(): self.config.scoring_port = int(self.scoring_port_var.get())
+        self.config.scoring_port = self.scoring_port_var.get()
         self.config.obs_host = self.obs_host_var.get()
-        if self.obs_port_var.get().isdigit(): self.config.obs_port = int(self.obs_port_var.get())
+        self.config.obs_port = self.obs_port_var.get()
         self.config.obs_password = self.obs_password_var.get()
         self.config.output_dir = self.output_dir_var.get()
-        if self.web_port_var.get().isdigit(): self.config.web_port = int(self.web_port_var.get())
-        if self.pre_match_buffer_var.get().isdigit(): self.config.pre_match_buffer_seconds = int(self.pre_match_buffer_var.get())
-        if self.post_match_buffer_var.get().isdigit(): self.config.post_match_buffer_seconds = int(self.post_match_buffer_var.get())
-        if self.match_duration_var.get().isdigit(): self.config.match_duration_seconds = int(self.match_duration_var.get())
+        self.config.web_port = self.web_port_var.get()
+        self.config.pre_match_buffer_seconds = self.pre_match_buffer_var.get()
+        self.config.post_match_buffer_seconds = self.post_match_buffer_var.get()
+        self.config.match_duration_seconds = self.match_duration_var.get()
         self.config.field_scene_mapping = {int(k): v.get() for k, v in self.scene_mappings.items()}
 
     def load_config_to_gui(self, config: MatchBoxConfig) -> None:
         """Load configuration into GUI"""
         self.event_code_var.set(config.event_code)
         self.scoring_host_var.set(config.scoring_host)
-        self.scoring_port_var.set(str(config.scoring_port))
+        self.scoring_port_var.set(config.scoring_port)
         self.obs_host_var.set(config.obs_host)
-        self.obs_port_var.set(str(config.obs_port))
+        self.obs_port_var.set(config.obs_port)
         self.obs_password_var.set(config.obs_password)
         self.output_dir_var.set(config.output_dir)
-        self.web_port_var.set(str(config.web_port))
-        self.pre_match_buffer_var.set(str(config.pre_match_buffer_seconds))
-        self.post_match_buffer_var.set(str(config.post_match_buffer_seconds))
-        self.match_duration_var.set(str(config.match_duration_seconds))
+        self.web_port_var.set(config.web_port)
+        self.pre_match_buffer_var.set(config.pre_match_buffer_seconds)
+        self.post_match_buffer_var.set(config.post_match_buffer_seconds)
+        self.match_duration_var.set(config.match_duration_seconds)
 
         # Load scene mappings
         field_scene_mapping = config.field_scene_mapping
