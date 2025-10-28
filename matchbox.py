@@ -173,28 +173,29 @@ class MatchBoxCore:
                 self.log(f"Could not get input list: {e}")
                 existing_sources = []
 
-            # Step 4: Create shared overlay source
+            # Step 4: Create or update shared overlay source
             shared_overlay_name = "FTC Scoring System Overlay"
+            overlay_url = (f"http://{self.config.scoring_host}:{self.config.scoring_port}/event/{self.config.event_code}/display/"
+                          f"?type=audience&bindToField=all&scoringBarLocation=bottom&allianceOrientation=standard"
+                          f"&liveScores=true&mute=false&muteRandomizationResults=false&fieldStyleTimer=false"
+                          f"&overlay=true&overlayColor=%23ff00ff&allianceSelectionStyle=classic&awardsStyle=overlay"
+                          f"&dualDivisionRankingStyle=sideBySide&rankingsFontSize=larger&showMeetRankings=false"
+                          f"&rankingsAllTeams=true")
+            self.log(f"Overlay URL: {overlay_url}")
+
+            # Browser source settings
+            browser_settings = {
+                "url": overlay_url,
+                "width": 1920,
+                "height": 1080,
+                "shutdown": False,
+                "restart_when_active": False,
+                "reroute_audio": True,  # Enable audio output
+                "monitor_audio": True   # Monitor audio (for live mixing)
+            }
+
             if shared_overlay_name not in existing_sources:
                 self.log("Creating shared overlay source...")
-                overlay_url = (f"http://{self.config.scoring_host}:{self.config.scoring_port}/event/{self.config.event_code}/display/"
-                              f"?type=audience&bindToField=all&scoringBarLocation=bottom&allianceOrientation=standard"
-                              f"&liveScores=true&mute=false&muteRandomizationResults=false&fieldStyleTimer=false"
-                              f"&overlay=true&overlayColor=%23ff00ff&allianceSelectionStyle=classic&awardsStyle=overlay"
-                              f"&dualDivisionRankingStyle=sideBySide&rankingsFontSize=larger&showMeetRankings=false"
-                              f"&rankingsAllTeams=true")
-                self.log(f"Overlay URL: {overlay_url}")
-
-                # Browser source settings
-                browser_settings = {
-                    "url": overlay_url,
-                    "width": 1920,
-                    "height": 1080,
-                    "shutdown": False,
-                    "restart_when_active": False,
-                    "reroute_audio": True,  # Enable audio output
-                    "monitor_audio": True   # Monitor audio (for live mixing)
-                }
 
                 try:
                     # Create the browser source - need to specify a scene for newer API
@@ -265,7 +266,17 @@ class MatchBoxCore:
                     self.log(f"✗ Error creating shared overlay source: {e}")
                     # Don't return False here, continue with scene setup
             else:
-                self.log(f"✓ Shared overlay source already exists: {shared_overlay_name}")
+                # Update existing overlay source with new URL
+                self.log(f"Updating existing overlay source: {shared_overlay_name}")
+                try:
+                    self.obs_ws.call(obsrequests.SetInputSettings(
+                        inputName=shared_overlay_name,
+                        inputSettings={"url": overlay_url},
+                        overlay=True  # Overlay mode: only update URL, keep other settings
+                    ))
+                    self.log(f"✓ Updated overlay URL for existing source")
+                except Exception as e:
+                    self.log(f"✗ Failed to update overlay URL: {e}")
 
             # Step 6: Add the shared overlay to each field scene
             self.log("Adding overlay to scenes...")
