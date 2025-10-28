@@ -914,7 +914,7 @@ class MatchBoxGUI:
 
         # Create notebook with tabs
         notebook = ttk.Notebook(main_frame)
-        notebook.pack(fill=tk.BOTH, expand=True, pady=5)
+        notebook.pack(fill=tk.BOTH, expand=False, pady=5)
 
         # Connection settings tab
         self.create_connection_tab(notebook)
