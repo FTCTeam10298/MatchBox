@@ -47,7 +47,6 @@ class MatchBoxConfig:
         self.obs_host: str = 'localhost'
         self.obs_port: int = 4455
         self.obs_password: str = ''
-        self.num_fields: int = 2
         self.output_dir: str = './match_clips'
         self.web_port: int = 80
         self.mdns_name: str = 'ftcvideo.local'
@@ -143,7 +142,7 @@ class MatchBoxCore:
 
             # Step 2: Create field scenes FIRST
             self.log("Creating field scenes...")
-            for field_num in range(1, self.config.num_fields + 1):
+            for field_num in range(1, 4):
                 scene_name = f"Field {field_num}"
                 if scene_name not in existing_scenes:
                     try:
@@ -271,7 +270,7 @@ class MatchBoxCore:
 
             # Step 6: Add the shared overlay to each field scene
             self.log("Adding overlay to scenes...")
-            for field_num in range(1, self.config.num_fields + 1):
+            for field_num in range(1, 4):
                 scene_name = f"Field {field_num}"
 
                 try:
@@ -874,7 +873,6 @@ class MatchBoxGUI:
         self.event_code_var: tk.StringVar = tk.StringVar()
         self.scoring_host_var: tk.StringVar = tk.StringVar()
         self.scoring_port_var: tk.StringVar = tk.StringVar()
-        self.num_fields_var: tk.StringVar = tk.StringVar()
         self.obs_host_var: tk.StringVar = tk.StringVar()
         self.obs_port_var: tk.StringVar = tk.StringVar()
         self.obs_password_var: tk.StringVar = tk.StringVar()
@@ -1004,25 +1002,21 @@ class MatchBoxGUI:
         ttk.Entry(conn_frame, textvariable=self.scoring_port_var, width=6).grid(
             row=2, column=3, sticky=tk.W, pady=2)
 
-        ttk.Label(conn_frame, text="Number of Fields:").grid(row=3, column=0, sticky=tk.W, pady=2)
-        ttk.Entry(conn_frame, textvariable=self.num_fields_var, width=6).grid(
-            row=3, column=1, sticky=tk.W, pady=2)
-
         # OBS Settings
         ttk.Label(conn_frame, text="OBS Settings", font=("", 12, "bold")).grid(
-            row=4, column=0, columnspan=3, sticky=tk.W, pady=(10, 5))
+            row=3, column=0, columnspan=3, sticky=tk.W, pady=(10, 5))
 
-        ttk.Label(conn_frame, text="OBS WebSocket Host:").grid(row=5, column=0, sticky=tk.W, pady=2)
+        ttk.Label(conn_frame, text="OBS WebSocket Host:").grid(row=4, column=0, sticky=tk.W, pady=2)
         ttk.Entry(conn_frame, textvariable=self.obs_host_var, width=30).grid(
-            row=5, column=1, sticky=tk.W, pady=2)
+            row=4, column=1, sticky=tk.W, pady=2)
 
-        ttk.Label(conn_frame, text="Port:").grid(row=5, column=2, sticky=tk.W, pady=2)
+        ttk.Label(conn_frame, text="Port:").grid(row=4, column=2, sticky=tk.W, pady=2)
         ttk.Entry(conn_frame, textvariable=self.obs_port_var, width=6).grid(
-            row=5, column=3, sticky=tk.W, pady=2)
+            row=4, column=3, sticky=tk.W, pady=2)
 
-        ttk.Label(conn_frame, text="Password:").grid(row=6, column=0, sticky=tk.W, pady=2)
+        ttk.Label(conn_frame, text="Password:").grid(row=5, column=0, sticky=tk.W, pady=2)
         ttk.Entry(conn_frame, textvariable=self.obs_password_var, width=30, show="*").grid(
-            row=6, column=1, sticky=tk.W, pady=2)
+            row=5, column=1, sticky=tk.W, pady=2)
 
     def create_scene_mapping_tab(self, notebook: ttk.Notebook) -> None:
         """Create scene mapping tab"""
@@ -1034,13 +1028,17 @@ class MatchBoxGUI:
 
         # Scene mapping entries
         self.scene_mappings = {}
-        for i in range(1, 3):
+        for i in range(1, 4):
             ttk.Label(mapping_frame, text=f"Field {i} Scene:").grid(
                 row=i, column=0, sticky=tk.W, pady=2)
             scene_var = tk.StringVar()
             ttk.Entry(mapping_frame, textvariable=scene_var, width=30).grid(
                 row=i, column=1, sticky=tk.W, pady=2)
             self.scene_mappings[i] = scene_var
+        
+        info_text = (f"Scenes for fields that do not exist at a given event/division can be safely ignored.")
+        ttk.Label(mapping_frame, text=info_text, foreground="gray").grid(
+            row=5, column=0, columnspan=3, sticky=tk.W, pady=5)
 
     def create_video_settings_tab(self, notebook: ttk.Notebook) -> None:
         """Create video settings tab"""
@@ -1105,7 +1103,6 @@ class MatchBoxGUI:
         self.config.obs_host = self.obs_host_var.get()
         if self.obs_port_var.get().isdigit(): self.config.obs_port = int(self.obs_port_var.get())
         self.config.obs_password = self.obs_password_var.get()
-        if self.num_fields_var.get().isdigit(): self.config.num_fields = int(self.num_fields_var.get())
         self.config.output_dir = self.output_dir_var.get()
         if self.web_port_var.get().isdigit(): self.config.web_port = int(self.web_port_var.get())
         if self.pre_match_buffer_var.get().isdigit(): self.config.pre_match_buffer_seconds = int(self.pre_match_buffer_var.get())
@@ -1121,7 +1118,6 @@ class MatchBoxGUI:
         self.obs_host_var.set(config.obs_host)
         self.obs_port_var.set(str(config.obs_port))
         self.obs_password_var.set(config.obs_password)
-        self.num_fields_var.set(str(config.num_fields))
         self.output_dir_var.set(config.output_dir)
         self.web_port_var.set(str(config.web_port))
         self.pre_match_buffer_var.set(str(config.pre_match_buffer_seconds))
