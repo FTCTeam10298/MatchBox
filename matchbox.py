@@ -884,6 +884,7 @@ class MatchBoxGUI:
         self.obs_password_var: tk.StringVar = tk.StringVar()
         self.scene_mappings: dict[int, tk.StringVar] = {}
         self.output_dir_var: tk.StringVar = tk.StringVar()
+        self.mdns_name_var: tk.StringVar = tk.StringVar()
         self.web_port_var: tk.IntVar = tk.IntVar()
         self.pre_match_buffer_var: tk.IntVar = tk.IntVar()
         self.post_match_buffer_var: tk.IntVar = tk.IntVar()
@@ -998,15 +999,15 @@ class MatchBoxGUI:
         ttk.Label(conn_frame, text="FTC Scoring System", font=("", 12, "bold")).grid(
             row=0, column=0, columnspan=3, sticky=tk.W, pady=(0, 5))
 
-        ttk.Label(conn_frame, text="Event Code:").grid(row=1, column=0, sticky=tk.W, pady=2)
+        ttk.Label(conn_frame, text="Event Code:").grid(row=1, column=0, sticky=tk.W, pady=2, padx=(0, 10))
         ttk.Entry(conn_frame, textvariable=self.event_code_var, width=30).grid(
             row=1, column=1, sticky=tk.W, pady=2)
 
-        ttk.Label(conn_frame, text="Scoring System Host:").grid(row=2, column=0, sticky=tk.W, pady=2)
+        ttk.Label(conn_frame, text="Scoring System Host:").grid(row=2, column=0, sticky=tk.W, pady=2, padx=(0, 10))
         ttk.Entry(conn_frame, textvariable=self.scoring_host_var, width=30).grid(
             row=2, column=1, sticky=tk.W, pady=2)
 
-        ttk.Label(conn_frame, text="Port:").grid(row=2, column=2, sticky=tk.W, pady=2)
+        ttk.Label(conn_frame, text="Port:").grid(row=2, column=2, sticky=tk.W, pady=2, padx=10)
         ttk.Entry(conn_frame, textvariable=self.scoring_port_var, width=6, validate="key", validatecommand=(self.vcmd, "%P")).grid(
             row=2, column=3, sticky=tk.W, pady=2)
 
@@ -1014,15 +1015,15 @@ class MatchBoxGUI:
         ttk.Label(conn_frame, text="OBS Settings", font=("", 12, "bold")).grid(
             row=3, column=0, columnspan=3, sticky=tk.W, pady=(10, 5))
 
-        ttk.Label(conn_frame, text="OBS WebSocket Host:").grid(row=4, column=0, sticky=tk.W, pady=2)
+        ttk.Label(conn_frame, text="OBS WebSocket Host:").grid(row=4, column=0, sticky=tk.W, pady=2, padx=(0, 10))
         ttk.Entry(conn_frame, textvariable=self.obs_host_var, width=30).grid(
             row=4, column=1, sticky=tk.W, pady=2)
 
-        ttk.Label(conn_frame, text="Port:").grid(row=4, column=2, sticky=tk.W, pady=2)
+        ttk.Label(conn_frame, text="Port:").grid(row=4, column=2, sticky=tk.W, pady=2, padx=10)
         ttk.Entry(conn_frame, textvariable=self.obs_port_var, width=6, validate="key", validatecommand=(self.vcmd, "%P")).grid(
             row=4, column=3, sticky=tk.W, pady=2)
 
-        ttk.Label(conn_frame, text="Password:").grid(row=5, column=0, sticky=tk.W, pady=2)
+        ttk.Label(conn_frame, text="Password:").grid(row=5, column=0, sticky=tk.W, pady=2, padx=(0, 10))
         ttk.Entry(conn_frame, textvariable=self.obs_password_var, width=30, show="*").grid(
             row=5, column=1, sticky=tk.W, pady=2)
 
@@ -1038,7 +1039,7 @@ class MatchBoxGUI:
         self.scene_mappings = {}
         for i in range(1, 4):
             ttk.Label(mapping_frame, text=f"Field {i} Scene:").grid(
-                row=i, column=0, sticky=tk.W, pady=2)
+                row=i, column=0, sticky=tk.W, pady=2, padx=(0, 10))
             scene_var = tk.StringVar()
             ttk.Entry(mapping_frame, textvariable=scene_var, width=30).grid(
                 row=i, column=1, sticky=tk.W, pady=2)
@@ -1057,42 +1058,45 @@ class MatchBoxGUI:
         ttk.Label(video_frame, text="Video Output", font=("", 12, "bold")).grid(
             row=0, column=0, columnspan=3, sticky=tk.W, pady=(0, 5))
 
-        ttk.Label(video_frame, text="Output Directory:").grid(row=1, column=0, sticky=tk.W, pady=2)
-        ttk.Entry(video_frame, textvariable=self.output_dir_var, width=40).grid(
+        ttk.Label(video_frame, text="Output Directory:").grid(row=1, column=0, sticky=tk.W, pady=2, padx=(0, 10))
+        ttk.Entry(video_frame, textvariable=self.output_dir_var, width=30).grid(
             row=1, column=1, sticky=tk.W, pady=2)
         ttk.Button(video_frame, text="Browse...", command=self.browse_output_dir).grid(
-            row=1, column=2, sticky=tk.W, pady=2)
+            row=1, column=2, sticky=tk.W, pady=2, padx=(10, 0))
 
         # Web server settings
         ttk.Label(video_frame, text="Local Web Server", font=("", 12, "bold")).grid(
             row=2, column=0, columnspan=3, sticky=tk.W, pady=(10, 5))
 
-        ttk.Label(video_frame, text="Web Server Port:").grid(row=3, column=0, sticky=tk.W, pady=2)
-        ttk.Entry(video_frame, textvariable=self.web_port_var, width=6, validate="key", validatecommand=(self.vcmd, "%P")).grid(
+        ttk.Label(video_frame, text="Web Server Name:").grid(row=3, column=0, sticky=tk.W, pady=2, padx=(0, 10))
+        ttk.Entry(video_frame, textvariable=self.mdns_name_var, width=30).grid(
             row=3, column=1, sticky=tk.W, pady=2)
 
-        # Info label
+        server_port_frame = ttk.Frame(video_frame, padding="0")
+        server_port_frame.grid(row=3, column=2, sticky=tk.W)
+        ttk.Label(server_port_frame, text="Port:").grid(row=0, column=0, sticky=tk.W, pady=2, padx=10)
+        ttk.Entry(server_port_frame, textvariable=self.web_port_var, width=6, validate="key", validatecommand=(self.vcmd, "%P")).grid(
+            row=0, column=1, sticky=tk.W, pady=2)
+
+        info_text = (f"Match clips will be available at http://{self.config.mdns_name}:{self.config.web_port}")
+        ttk.Label(video_frame, text=info_text, foreground="gray").grid(
+            row=4, column=0, columnspan=3, sticky=tk.W, pady=5)
+
         # Video processing settings
         ttk.Label(video_frame, text="Video Processing", font=("", 12, "bold")).grid(
-            row=4, column=0, columnspan=3, sticky=tk.W, pady=(10, 5))
+            row=5, column=0, columnspan=3, sticky=tk.W, pady=(10, 5))
 
-        ttk.Label(video_frame, text="Pre-match buffer (seconds):").grid(row=5, column=0, sticky=tk.W, pady=2)
+        ttk.Label(video_frame, text="Pre-match buffer (seconds):").grid(row=6, column=0, sticky=tk.W, pady=2, padx=(0, 10))
         ttk.Entry(video_frame, textvariable=self.pre_match_buffer_var, width=6, validate="key", validatecommand=(self.vcmd, "%P")).grid(
-            row=5, column=1, sticky=tk.W, pady=2)
-
-        ttk.Label(video_frame, text="Post-match buffer (seconds):").grid(row=6, column=0, sticky=tk.W, pady=2)
-        ttk.Entry(video_frame, textvariable=self.post_match_buffer_var, width=6, validate="key", validatecommand=(self.vcmd, "%P")).grid(
             row=6, column=1, sticky=tk.W, pady=2)
 
-        ttk.Label(video_frame, text="Match duration (seconds):").grid(row=7, column=0, sticky=tk.W, pady=2)
-        ttk.Entry(video_frame, textvariable=self.match_duration_var, width=6, validate="key", validatecommand=(self.vcmd, "%P")).grid(
+        ttk.Label(video_frame, text="Post-match buffer (seconds):").grid(row=7, column=0, sticky=tk.W, pady=2, padx=(0, 10))
+        ttk.Entry(video_frame, textvariable=self.post_match_buffer_var, width=6, validate="key", validatecommand=(self.vcmd, "%P")).grid(
             row=7, column=1, sticky=tk.W, pady=2)
 
-        info_text = ("Match clips will be available at http://localhost:PORT\n"
-                    "Refs on the scoring network can access video clips locally\n"
-                    "MatchBox will automatically detect OBS recording and create clips")
-        ttk.Label(video_frame, text=info_text, foreground="gray").grid(
-            row=8, column=0, columnspan=3, sticky=tk.W, pady=5)
+        ttk.Label(video_frame, text="Match duration (seconds):").grid(row=8, column=0, sticky=tk.W, pady=2, padx=(0, 10))
+        ttk.Entry(video_frame, textvariable=self.match_duration_var, width=6, validate="key", validatecommand=(self.vcmd, "%P")).grid(
+            row=8, column=1, sticky=tk.W, pady=2)
 
     def browse_output_dir(self) -> None:
         """Browse for output directory"""
@@ -1112,6 +1116,7 @@ class MatchBoxGUI:
         self.config.obs_port = self.obs_port_var.get()
         self.config.obs_password = self.obs_password_var.get()
         self.config.output_dir = self.output_dir_var.get()
+        self.config.mdns_name = self.mdns_name_var.get()
         self.config.web_port = self.web_port_var.get()
         self.config.pre_match_buffer_seconds = self.pre_match_buffer_var.get()
         self.config.post_match_buffer_seconds = self.post_match_buffer_var.get()
@@ -1127,6 +1132,7 @@ class MatchBoxGUI:
         self.obs_port_var.set(config.obs_port)
         self.obs_password_var.set(config.obs_password)
         self.output_dir_var.set(config.output_dir)
+        self.mdns_name_var.set(config.mdns_name)
         self.web_port_var.set(config.web_port)
         self.pre_match_buffer_var.set(config.pre_match_buffer_seconds)
         self.post_match_buffer_var.set(config.post_match_buffer_seconds)
@@ -1193,9 +1199,7 @@ class MatchBoxGUI:
         _ = self.status_var.set("Status: Running 🟢")
 
         self.log("MatchBox started!")
-        self.log(f"Match clips will be available at http://localhost:{self.config.web_port}")
-        mdns_name = self.config.mdns_name
-        self.log(f"Network access: http://{mdns_name}:{self.config.web_port}")
+        self.log(f"Match clips will be available at http://{self.config.mdns_name}:{self.config.web_port}")
 
     def run_async_monitoring(self) -> None:
         """Run async monitoring in separate thread"""
