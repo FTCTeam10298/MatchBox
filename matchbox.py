@@ -42,14 +42,14 @@ class MatchBoxConfig:
     def __init__(self):
         # Initialize all values to their defaults
         self.event_code: str = ''
-        self.scoring_host: str = 'localhost'
+        self.scoring_host: str = ''
         self.scoring_port: int = 80
         self.obs_host: str = 'localhost'
         self.obs_port: int = 4455
         self.obs_password: str = ''
         self.num_fields: int = 2
         self.output_dir: str = './match_clips'
-        self.web_port: int = 8000
+        self.web_port: int = 80
         self.mdns_name: str = 'ftcvideo.local'
         self.field_scene_mapping: dict[int, str] = {1: "Field 1", 2: "Field 2"}
         self.frame_increment: float = 5.0
