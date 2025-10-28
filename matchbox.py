@@ -955,9 +955,33 @@ class MatchBoxGUI:
         # Log area
         ttk.Label(control_frame, text="Log", font=("", 10, "bold")).pack(anchor=tk.W, pady=(10, 5))
 
-        self.log_text: scrolledtext.ScrolledText = scrolledtext.ScrolledText(control_frame, height=12)
-        self.log_text.pack(fill=tk.BOTH, expand=True)
-        _ = self.log_text.config(state=tk.DISABLED)
+        # Scrolling text box with ttk Scrollbar (https://stackoverflow.com/a/13833338)
+        class TextScrollCombo(ttk.Frame):
+
+            def __init__(self, *args, **kwargs):  # pyright: ignore[reportUnknownParameterType, reportMissingParameterType]
+                
+                super().__init__(*args, **kwargs)  # pyright: ignore[reportUnknownArgumentType]
+                
+            # ensure a consistent GUI size
+                self.grid_propagate(False)
+            # implement stretchability
+                _ = self.grid_rowconfigure(0, weight=1)
+                _ = self.grid_columnconfigure(0, weight=1)
+                
+            # create a Text widget
+                self.txt: tk.Text = tk.Text(self)
+                self.txt.grid(row=0, column=0, sticky="nsew", padx=0, pady=0)
+
+            # create a Scrollbar and associate it with txt
+                scrollb = ttk.Scrollbar(self, command=self.txt.yview)  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
+                scrollb.grid(row=0, column=1, sticky='nsew', padx=0, pady=0)
+                self.txt['yscrollcommand'] = scrollb.set
+
+        log_combo = TextScrollCombo(control_frame)
+        log_combo.pack(fill="both", expand=True)
+        _ = log_combo.txt.config(state=tk.DISABLED)
+
+        self.log_text: tk.Text = log_combo.txt
 
     def create_connection_tab(self, notebook: ttk.Notebook) -> None:
         """Create connection settings tab"""
