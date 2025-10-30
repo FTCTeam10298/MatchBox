@@ -329,6 +329,14 @@ class MatchBoxCore:
 
     def get_obs_recording_path(self) -> str | None:
         """Get current OBS recording file path via WebSocket"""
+        info = self.get_obs_recording_info()
+        if info and 'recording_path' in info:
+            path = info['recording_path']
+            return str(path) if path else None
+        return None
+
+    def get_obs_recording_info(self) -> dict[str, object] | None:
+        """Get current OBS recording info (path, duration, start time) via WebSocket"""
         if not self.obs_ws:
             return None
 
@@ -339,7 +347,18 @@ class MatchBoxCore:
                 self.log_error("OBS is not currently recording")
                 return None
 
+            # Get recording duration (in milliseconds)
+            output_duration_ms: int = int(record_status.datain.get('outputDuration', 0))  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
+            output_timecode: str = str(record_status.datain.get('outputTimecode', '00:00:00.000'))  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
+
+            # Calculate recording start time
+            from datetime import datetime, timedelta
+            current_time = datetime.now()
+            recording_duration_seconds: float = float(output_duration_ms) / 1000.0
+            recording_start_time = current_time - timedelta(seconds=recording_duration_seconds)
+
             # Try to get recording output settings
+            recording_path = None
             try:
                 # Try advanced file output first
                 output_settings = self.obs_ws.call(obsrequests.GetOutputSettings(outputName="adv_file_output"))  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType, reportAny]
@@ -354,8 +373,13 @@ class MatchBoxCore:
                     recording_path = record_status.datain.get('outputPath')  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
 
             if recording_path:
-                self.log(f"Found OBS recording path: {recording_path}")
-                return recording_path  # pyright: ignore[reportUnknownVariableType]
+                self.log(f"Found OBS recording: {recording_path} (started at {recording_start_time.strftime('%H:%M:%S')}, duration: {output_timecode})")
+                return {
+                    'recording_path': recording_path,
+                    'recording_start_time': recording_start_time,
+                    'recording_duration_ms': output_duration_ms,
+                    'recording_timecode': output_timecode
+                }
             else:
                 self.log_error("Could not determine OBS recording path")
                 return None
@@ -722,9 +746,23 @@ class MatchBoxCore:
                 self.log_error("❌ Local video processor is None!")
                 return
 
+            # Fetch fresh recording info from OBS (path + start time)
+            # This handles cases where recording was restarted between matches
+            self.log("🎬 Fetching current OBS recording info...")
+            obs_info = self.get_obs_recording_info()
+
+            if not obs_info:
+                self.log_error("❌ Could not get OBS recording info - cannot create clip")
+                return
+
+            # Add OBS recording info to match_info for the video processor
+            match_info_with_obs = dict(match_info)
+            match_info_with_obs['obs_recording_path'] = obs_info['recording_path']
+            match_info_with_obs['obs_recording_start_time'] = obs_info['recording_start_time']
+
             # Extract clip using local video processor
             self.log("🎬 Calling local_video_processor.extract_clip()...")
-            clip_path = await self.local_video_processor.extract_clip(match_info)
+            clip_path = await self.local_video_processor.extract_clip(match_info_with_obs)
             self.log(f"🎬 extract_clip() returned: {clip_path}")
 
             if clip_path:

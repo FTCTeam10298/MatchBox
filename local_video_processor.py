@@ -119,16 +119,25 @@ class LocalVideoProcessor:
             logger.warning(f"Could not get recording duration: {e}")
             return 0.0
 
-    def calculate_clip_times(self, match_start_time: datetime) -> tuple[float, float]:
-        """Calculate clip start and end times with buffers"""
-        # Convert match start time to seconds from recording start
-        recording_start = self.get_recording_start_time()
+    def calculate_clip_times(self, match_start_time: datetime,
+                             recording_start_time: datetime | None = None) -> tuple[float, float]:
+        """Calculate clip start and end times with buffers
+
+        Args:
+            match_start_time: When the match started
+            recording_start_time: When OBS recording started (if None, uses file metadata)
+        """
+        # Use provided recording start time, or fall back to file metadata
+        recording_start = recording_start_time if recording_start_time else self.get_recording_start_time()
+
         if not recording_start:
             # Fallback: use current recording duration as estimate
+            logger.warning("No recording start time available, using fallback estimate")
             current_duration = self.get_recording_duration()
             match_offset_seconds = max(0, current_duration - 30)  # Estimate recent match
         else:
             match_offset_seconds = (match_start_time - recording_start).total_seconds()
+            logger.info(f"Match started {match_offset_seconds:.1f}s into recording")
 
         # Calculate clip boundaries
         clip_start = max(0, match_offset_seconds - self.pre_match_buffer)
@@ -151,14 +160,36 @@ class LocalVideoProcessor:
 
     async def extract_clip(self, match_info: Mapping[str, object]) -> Path | None:
         """Extract a match clip from the local recording"""
-        if not self.is_recording_available():
-            logger.warning("Recording file not available for clipping")
+        # Use OBS-provided recording path if available (fetched fresh at clip time)
+        recording_path = None
+        if 'obs_recording_path' in match_info:
+            recording_path = Path(str(match_info['obs_recording_path']))
+            logger.info(f"Using fresh OBS recording path: {recording_path}")
+        else:
+            # Fallback to the recording path set during initialization
+            if not self.is_recording_available():
+                logger.warning("Recording file not available for clipping")
+                return None
+            recording_path = self.recording_path
+
+        if not recording_path or not recording_path.exists():
+            logger.error(f"Recording path does not exist: {recording_path}")
             return None
 
         try:
             # Get match timing information
             match_start_time = self.parse_match_time(match_info)
-            clip_start, clip_duration = self.calculate_clip_times(match_start_time)
+
+            # Use OBS-provided recording start time if available
+            recording_start_time = None
+            if 'obs_recording_start_time' in match_info:
+                from datetime import datetime
+                obs_start = match_info['obs_recording_start_time']
+                if isinstance(obs_start, datetime):
+                    recording_start_time = obs_start
+                    logger.info(f"Using fresh OBS recording start time: {recording_start_time.strftime('%H:%M:%S')}")
+
+            clip_start, clip_duration = self.calculate_clip_times(match_start_time, recording_start_time)
 
             # Generate output filename
             match_name = self.generate_match_filename(match_info)
@@ -172,13 +203,8 @@ class LocalVideoProcessor:
 
             logger.info(f"Extracting clip: {clip_start:.1f}s + {clip_duration:.1f}s -> {output_path}")
 
-            # Extract clip using FFmpeg
-            if not self.recording_path:
-                logger.error("Recording path is None")
-                return None
-
             success = await self.extract_clip_ffmpeg(
-                input_path=self.recording_path,
+                input_path=recording_path,
                 output_path=output_path,
                 start_time=clip_start,
                 duration=clip_duration
