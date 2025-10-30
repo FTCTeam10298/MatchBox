@@ -33,7 +33,6 @@ Examples:
     _ = ftc_group.add_argument("--event-code", required=True, help="FTC Event Code (required)")
     _ = ftc_group.add_argument("--scoring-host", default="localhost", help="Scoring system host (default: localhost)")
     _ = ftc_group.add_argument("--scoring-port", type=int, default=80, help="Scoring system port (default: 80)")
-    _ = ftc_group.add_argument("--num-fields", type=int, default=2, help="Number of fields (default: 2)")
 
     # OBS Settings
     obs_group = parser.add_argument_group("OBS Settings")
@@ -45,6 +44,7 @@ Examples:
     scene_group = parser.add_argument_group("Scene Mapping")
     _ = scene_group.add_argument("--field1-scene", default="Field 1", help="Scene name for Field 1 (default: 'Field 1')")
     _ = scene_group.add_argument("--field2-scene", default="Field 2", help="Scene name for Field 2 (default: 'Field 2')")
+    _ = scene_group.add_argument("--field3-scene", default="Field 3", help="Scene name for Field 3 (default: 'Field 3')")
 
     # Video and Web Settings
     video_group = parser.add_argument_group("Video & Web Settings")
@@ -96,12 +96,12 @@ Examples:
     if cast(str, args.obs_host): config.obs_host = cast(str, args.obs_host)
     if cast(int, args.obs_port): config.obs_port = cast(int, args.obs_port)
     if cast(str, args.obs_password): config.obs_password = cast(str, args.obs_password)
-    if cast(int, args.num_fields): config.num_fields = cast(int, args.num_fields)
     if cast(str, args.output_dir): config.output_dir = cast(str, args.output_dir)
     if cast(int, args.web_port): config.web_port = cast(int, args.web_port)
     if cast(str, args.field1_scene): config.field_scene_mapping = {
         1: cast(str, args.field1_scene),
-        2: cast(str, args.field2_scene)
+        2: cast(str, args.field2_scene),
+        3: cast(str, args.field3_scene)
     }
 
     # Save config if requested
