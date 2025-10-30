@@ -12,6 +12,7 @@ import shutil
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_all
 from PyInstaller.utils.hooks import collect_data_files
+from PyInstaller.utils.hooks import collect_submodules
 from setuptools_scm import get_version, _cli
 
 _cli.main(["--force-write-version-files"])
@@ -20,6 +21,7 @@ datas, binaries, hiddenimports = collect_all('MatchBox')
 datas += [('./us.brainstormz.MatchBox.png', '.'),
          ('./us.brainstormz.MatchBox.Devel.png', '.')]
 datas += collect_data_files('sv_ttk')
+hiddenimports += collect_submodules('zeroconf') # https://github.com/pyinstaller/pyinstaller-hooks-contrib/issues/840
 
 # Download and bundle ffmpeg binaries
 def download_ffmpeg():
