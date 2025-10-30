@@ -66,11 +66,11 @@ Examples:
     if cast(str, args.config):
         try:
             with open(cast(str, args.config), 'r') as f:
-                file = json.load(f)
-                config.__dict__.update(file)
+                file = json.load(f)  # pyright: ignore[reportAny]
+                config.__dict__.update(file)  # pyright: ignore[reportAny]
                 # Fix field_scene_mapping keys to be integers (JSON deserializes them as strings)
                 if 'field_scene_mapping' in file:
-                    config.field_scene_mapping = {int(k): v for k, v in file['field_scene_mapping'].items()}
+                    config.field_scene_mapping = {int(k): v for k, v in file['field_scene_mapping'].items()}  # pyright: ignore[reportAny]
             print("Configuration loaded from" + cast(str, args.config))
         except Exception as e:
             print(f"Error loading config file: {e}")
@@ -78,11 +78,11 @@ Examples:
     else:
         try:
             with open("matchbox_config.json", "r") as f:
-                file = json.load(f)
-                config.__dict__.update(file)
+                file = json.load(f)  # pyright: ignore[reportAny]
+                config.__dict__.update(file)  # pyright: ignore[reportAny]
                 # Fix field_scene_mapping keys to be integers (JSON deserializes them as strings)
                 if 'field_scene_mapping' in file:
-                    config.field_scene_mapping = {int(k): v for k, v in file['field_scene_mapping'].items()}
+                    config.field_scene_mapping = {int(k): v for k, v in file['field_scene_mapping'].items()}  # pyright: ignore[reportAny]
             print("Configuration loaded from matchbox_config.json")
         except FileNotFoundError:
             print("No configuration file found")

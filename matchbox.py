@@ -15,9 +15,9 @@ import websockets.client
 import websockets.exceptions
 from websockets.client import WebSocketClientProtocol
 import obswebsocket
-from obswebsocket import requests as obsrequests
+from obswebsocket import requests as obsrequests  # pyright: ignore[reportAny]
 import tkinter as tk
-from tkinter import PhotoImage, TclError, ttk, messagebox, scrolledtext, filedialog
+from tkinter import PhotoImage, TclError, ttk, messagebox, filedialog
 import argparse
 import sys
 import logging
@@ -107,7 +107,7 @@ class MatchBoxCore:
         """Connect to OBS WebSocket server"""
         try:
             self.obs_ws = obswebsocket.obsws(self.config.obs_host, self.config.obs_port, self.config.obs_password)
-            self.obs_ws.connect()
+            self.obs_ws.connect()  # pyright: ignore[reportUnknownMemberType]
             self.log("Connected to OBS WebSocket server")
             return True
         except Exception as e:
@@ -118,7 +118,7 @@ class MatchBoxCore:
         """Disconnect from OBS WebSocket server"""
         if self.obs_ws:
             try:
-                self.obs_ws.disconnect()
+                self.obs_ws.disconnect()  # pyright: ignore[reportUnknownMemberType]
                 self.log("Disconnected from OBS WebSocket server")
             except Exception as e:
                 self.log(f"Error disconnecting from OBS: {e}")
@@ -136,9 +136,9 @@ class MatchBoxCore:
 
             # Step 1: Get current scenes and sources
             self.log("Getting current scenes...")
-            scenes_response = self.obs_ws.call(obsrequests.GetSceneList())
-            existing_scenes = [scene['sceneName'] for scene in scenes_response.datain['scenes']]
-            self.log(f"Found {len(existing_scenes)} existing scenes")
+            scenes_response = self.obs_ws.call(obsrequests.GetSceneList())  # pyright: ignore[reportAny, reportUnknownMemberType, reportUnknownVariableType]
+            existing_scenes = [scene['sceneName'] for scene in scenes_response.datain['scenes']]  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
+            self.log(f"Found {len(existing_scenes)} existing scenes")  # pyright: ignore[reportUnknownArgumentType]
 
             # Step 2: Create field scenes FIRST
             self.log("Creating field scenes...")
@@ -146,7 +146,7 @@ class MatchBoxCore:
                 scene_name = f"Field {field_num}"
                 if scene_name not in existing_scenes:
                     try:
-                        self.obs_ws.call(obsrequests.CreateScene(sceneName=scene_name))
+                        self.obs_ws.call(obsrequests.CreateScene(sceneName=scene_name))  # pyright: ignore[reportAny, reportUnknownMemberType]
                         self.log(f"✓ Created scene: {scene_name}")
                     except Exception as e:
                         self.log(f"✗ Failed to create scene {scene_name}: {e}")
@@ -156,9 +156,9 @@ class MatchBoxCore:
             # Step 3: Get existing sources to avoid duplicates
             self.log("Checking existing sources...")
             try:
-                sources_response = self.obs_ws.call(obsrequests.GetInputList())
-                existing_sources = [source['inputName'] for source in sources_response.datain['inputs']]
-                self.log(f"Found {len(existing_sources)} existing sources")
+                sources_response = self.obs_ws.call(obsrequests.GetInputList())  # pyright: ignore[reportAny, reportUnknownMemberType, reportUnknownVariableType]
+                existing_sources = [source['inputName'] for source in sources_response.datain['inputs']]  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
+                self.log(f"Found {len(existing_sources)} existing sources")  # pyright: ignore[reportUnknownArgumentType]
             except Exception as e:
                 self.log(f"Could not get input list: {e}")
                 existing_sources = []
@@ -192,7 +192,7 @@ class MatchBoxCore:
                     try:
                         # Use the first field scene as the target for creation
                         first_scene = f"Field 1"
-                        self.obs_ws.call(obsrequests.CreateInput(
+                        self.obs_ws.call(obsrequests.CreateInput(  # pyright: ignore[reportUnknownMemberType, reportAny]
                             sceneName=first_scene,
                             inputName=shared_overlay_name,
                             inputKind="browser_source",
@@ -202,7 +202,7 @@ class MatchBoxCore:
                     except Exception as e1:
                         self.log(f"CreateInput failed ({e1}), trying CreateSource...")
                         # Fallback to older API method
-                        self.obs_ws.call(obsrequests.CreateSource(
+                        self.obs_ws.call(obsrequests.CreateSource(  # pyright: ignore[reportUnknownMemberType, reportAny]
                             sourceName=shared_overlay_name,
                             sourceKind="browser_source",
                             sourceSettings=browser_settings
@@ -231,7 +231,7 @@ class MatchBoxCore:
                     try:
                         # Try newer filter API first
                         try:
-                            self.obs_ws.call(obsrequests.CreateSourceFilter(
+                            self.obs_ws.call(obsrequests.CreateSourceFilter(  # pyright: ignore[reportUnknownMemberType, reportAny]
                                 sourceName=shared_overlay_name,
                                 filterName="Chroma Key",
                                 filterKind="chroma_key_filter_v2",
@@ -241,7 +241,7 @@ class MatchBoxCore:
                         except Exception as e1:
                             self.log(f"v2 filter failed ({e1}), trying v1...")
                             # Fallback to older filter name
-                            self.obs_ws.call(obsrequests.CreateSourceFilter(
+                            self.obs_ws.call(obsrequests.CreateSourceFilter(  # pyright: ignore[reportUnknownMemberType, reportAny]
                                 sourceName=shared_overlay_name,
                                 filterName="Chroma Key",
                                 filterKind="chroma_key_filter",
@@ -259,7 +259,7 @@ class MatchBoxCore:
                 # Update existing overlay source with new URL
                 self.log(f"Updating existing overlay source: {shared_overlay_name}")
                 try:
-                    self.obs_ws.call(obsrequests.SetInputSettings(
+                    self.obs_ws.call(obsrequests.SetInputSettings(  # pyright: ignore[reportUnknownMemberType, reportAny]
                         inputName=shared_overlay_name,
                         inputSettings={"url": overlay_url},
                         overlay=True  # Overlay mode: only update URL, keep other settings
@@ -276,8 +276,8 @@ class MatchBoxCore:
                 try:
                     # Check if the source is already in the scene
                     try:
-                        scene_items_response = self.obs_ws.call(obsrequests.GetSceneItemList(sceneName=scene_name))
-                        existing_items = [item['sourceName'] for item in scene_items_response.datain['sceneItems']]
+                        scene_items_response = self.obs_ws.call(obsrequests.GetSceneItemList(sceneName=scene_name))  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAny]
+                        existing_items = [item['sourceName'] for item in scene_items_response.datain['sceneItems']]  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
                     except Exception:
                         # Fallback for older API
                         existing_items = []
@@ -289,7 +289,7 @@ class MatchBoxCore:
                         else:
                             try:
                                 # Try newer API first
-                                self.obs_ws.call(obsrequests.CreateSceneItem(
+                                self.obs_ws.call(obsrequests.CreateSceneItem(  # pyright: ignore[reportUnknownMemberType, reportAny]
                                     sceneName=scene_name,
                                     sourceName=shared_overlay_name
                                 ))
@@ -297,7 +297,7 @@ class MatchBoxCore:
                             except Exception as e1:
                                 self.log(f"CreateSceneItem failed ({e1}), trying AddSceneItem...")
                                 # Fallback to older API method
-                                self.obs_ws.call(obsrequests.AddSceneItem(
+                                self.obs_ws.call(obsrequests.AddSceneItem(  # pyright: ignore[reportUnknownMemberType, reportAny]
                                     sceneName=scene_name,
                                     sourceName=shared_overlay_name
                                 ))
@@ -323,28 +323,28 @@ class MatchBoxCore:
 
         try:
             # Check if recording is active
-            record_status = self.obs_ws.call(obsrequests.GetRecordStatus())
-            if not record_status.datain.get('outputActive', False):
+            record_status = self.obs_ws.call(obsrequests.GetRecordStatus())  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAny]
+            if not record_status.datain.get('outputActive', False):  # pyright: ignore[reportUnknownMemberType]
                 self.log("OBS is not currently recording")
                 return None
 
             # Try to get recording output settings
             try:
                 # Try advanced file output first
-                output_settings = self.obs_ws.call(obsrequests.GetOutputSettings(outputName="adv_file_output"))
-                recording_path = output_settings.datain['outputSettings'].get('path')
+                output_settings = self.obs_ws.call(obsrequests.GetOutputSettings(outputName="adv_file_output"))  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType, reportAny]
+                recording_path = output_settings.datain['outputSettings'].get('path')  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
             except Exception:
                 # Fallback: try simple file output
                 try:
-                    output_settings = self.obs_ws.call(obsrequests.GetOutputSettings(outputName="simple_file_output"))
-                    recording_path = output_settings.datain['outputSettings'].get('path')
+                    output_settings = self.obs_ws.call(obsrequests.GetOutputSettings(outputName="simple_file_output"))  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAny]
+                    recording_path = output_settings.datain['outputSettings'].get('path')  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
                 except Exception:
                     # Final fallback: use record status filename if available
-                    recording_path = record_status.datain.get('outputPath')
+                    recording_path = record_status.datain.get('outputPath')  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
 
             if recording_path:
                 self.log(f"Found OBS recording path: {recording_path}")
-                return recording_path
+                return recording_path  # pyright: ignore[reportUnknownVariableType]
             else:
                 self.log("Could not determine OBS recording path")
                 return None
@@ -400,12 +400,12 @@ class MatchBoxCore:
 
         scene_name = self.config.field_scene_mapping[field_number]
         try:
-            response = self.obs_ws.call(obsrequests.SetCurrentProgramScene(sceneName=scene_name))
-            if response.status:
+            response = self.obs_ws.call(obsrequests.SetCurrentProgramScene(sceneName=scene_name))  # pyright: ignore[reportUnknownMemberType, reportAny, reportUnknownVariableType]
+            if response.status:  # pyright: ignore[reportUnknownMemberType]
                 self.log(f"Switched to scene: {scene_name} for Field {field_number}")
                 return True
             else:
-                self.log(f"Failed to switch scene: {response.error}")
+                self.log(f"Failed to switch scene: {response.error}")  # pyright: ignore[reportUnknownMemberType]
                 return False
         except Exception as e:
             self.log(f"Error switching scene: {e}")
@@ -428,11 +428,11 @@ class MatchBoxCore:
             # Custom handler that serves from a specific directory without changing working directory
             def make_handler(directory: str) -> type[SimpleHTTPRequestHandler]:
                 class MatchClipHandler(SimpleHTTPRequestHandler):
-                    def __init__(self, *args: Any, **kwargs: Any) -> None:
-                        super().__init__(*args, directory=directory, **kwargs)
+                    def __init__(self, *args: Any, **kwargs: Any) -> None:  # pyright: ignore[reportAny, reportExplicitAny]
+                        super().__init__(*args, directory=directory, **kwargs)  # pyright: ignore[reportAny]
 
                     @override
-                    def log_message(self, format: str, *args: Any) -> None:
+                    def log_message(self, format: str, *args: Any) -> None:  # pyright: ignore[reportAny, reportExplicitAny]
                         # Enable logging for debugging (but suppress routine errors)
                         message = format % args
                         if "Broken pipe" not in message and "Connection reset" not in message:
@@ -860,12 +860,12 @@ class MatchBoxGUI:
 
         # Attempt to load version
         try:
-            from _version import __version__
+            from _version import __version__  # pyright: ignore[reportMissingImports, reportUnknownVariableType]
             self.version = __version__
         except ModuleNotFoundError:
             self.version: str = "dev"
 
-        self.root.title(f'MatchBox™ for FIRST® Tech Challenge™ - v{self.version}')
+        self.root.title(f'MatchBox™ for FIRST® Tech Challenge™ - v{self.version}')  # pyright: ignore[reportUnknownMemberType]
         self.root.geometry("900x700")
         self.root.resizable(True, True)
 
@@ -1282,11 +1282,11 @@ def main() -> None:
     if cast(str, args.config):
         try:
             with open(cast(str, args.config), 'r') as f:
-                file = json.load(f)
-                config.__dict__.update(file)
+                file = json.load(f)  # pyright: ignore[reportAny]
+                config.__dict__.update(file)  # pyright: ignore[reportAny]
                 # Fix field_scene_mapping keys to be integers (JSON deserializes them as strings)
                 if 'field_scene_mapping' in file:
-                    config.field_scene_mapping = {int(k): v for k, v in file['field_scene_mapping'].items()}
+                    config.field_scene_mapping = {int(k): v for k, v in file['field_scene_mapping'].items()}  # pyright: ignore[reportAny]
             logger.info("Configuration loaded from" + cast(str, args.config))
         except Exception as e:
             print(f"Error loading config file: {e}")
@@ -1294,11 +1294,11 @@ def main() -> None:
     else:
         try:
             with open("matchbox_config.json", "r") as f:
-                file = json.load(f)
-                config.__dict__.update(file)
+                file = json.load(f)  # pyright: ignore[reportAny]
+                config.__dict__.update(file)  # pyright: ignore[reportAny]
                 # Fix field_scene_mapping keys to be integers (JSON deserializes them as strings)
                 if 'field_scene_mapping' in file:
-                    config.field_scene_mapping = {int(k): v for k, v in file['field_scene_mapping'].items()}
+                    config.field_scene_mapping = {int(k): v for k, v in file['field_scene_mapping'].items()}  # pyright: ignore[reportAny]
             logger.info("Configuration loaded from matchbox_config.json")
         except FileNotFoundError:
             logger.warning("No configuration file found")
@@ -1370,8 +1370,8 @@ def main() -> None:
 
         # Attempt to load version
         try:
-            from _version import __version__
-            version = __version__
+            from _version import __version__  # pyright: ignore[reportMissingImports, reportUnknownVariableType]
+            version = __version__  # pyright: ignore[reportUnknownVariableType]
         except ModuleNotFoundError:
             version: str = "dev"
 
