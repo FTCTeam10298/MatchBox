@@ -227,8 +227,8 @@ class LocalVideoProcessor:
         try:
             cmd = [
                 get_ffmpeg_path('ffmpeg'), '-y',  # Overwrite output files
+                '-ss', str(start_time),  # Seek before input for keyframe alignment/inclusion of earlier keyframe, see https://superuser.com/a/1845442
                 '-i', str(input_path),
-                '-ss', str(start_time),
                 '-t', str(duration),
                 '-c', 'copy',  # Copy streams without re-encoding for speed
                 '-avoid_negative_ts', 'make_zero',
