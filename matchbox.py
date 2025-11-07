@@ -27,6 +27,7 @@ import concurrent.futures
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable, cast, override
 from zeroconf import ServiceInfo, Zeroconf
+import os
 
 # Configure logging
 logging.basicConfig(
@@ -484,6 +485,91 @@ class MatchBoxCore:
                         _ = self.send_header('Access-Control-Allow-Origin', '*')
                         _ = self.send_header('Cache-Control', 'no-cache')
                         super().end_headers()
+
+                    @override
+                    def do_GET(self) -> None:
+                        """Handle GET requests with range request support for video streaming"""
+
+                        # Translate path to local filesystem path
+                        path = self.translate_path(self.path)
+
+                        # Check if it's a file (not a directory)
+                        if not os.path.isfile(path):
+                            # Let the parent class handle directory listings
+                            return super().do_GET()
+
+                        # Get file size
+                        try:
+                            file_size = os.path.getsize(path)
+                        except OSError:
+                            self.send_error(404, "File not found")
+                            return
+
+                        # Determine content type
+                        content_type = self.guess_type(path)
+
+                        # Check for Range header
+                        range_header = self.headers.get('Range')
+
+                        if range_header:
+                            # Parse range header (format: "bytes=start-end")
+                            try:
+                                range_match = range_header.replace('bytes=', '').split('-')
+                                start = int(range_match[0]) if range_match[0] else 0
+                                end = int(range_match[1]) if range_match[1] else file_size - 1
+
+                                # Validate range
+                                if start >= file_size or end >= file_size or start > end:
+                                    self.send_error(416, "Requested Range Not Satisfiable")
+                                    _ = self.send_header('Content-Range', f'bytes */{file_size}')
+                                    self.end_headers()
+                                    return
+
+                                # Send 206 Partial Content response
+                                self.send_response(206)
+                                _ = self.send_header('Content-Type', content_type)
+                                _ = self.send_header('Content-Range', f'bytes {start}-{end}/{file_size}')
+                                _ = self.send_header('Content-Length', str(end - start + 1))
+                                _ = self.send_header('Accept-Ranges', 'bytes')
+                                self.end_headers()
+
+                                # Send the requested byte range
+                                with open(path, 'rb') as f:
+                                    _ = f.seek(start)
+                                    bytes_to_send = end - start + 1
+                                    chunk_size = 8192
+                                    while bytes_to_send > 0:
+                                        chunk = f.read(min(chunk_size, bytes_to_send))
+                                        if not chunk:
+                                            break
+                                        _ = self.wfile.write(chunk)
+                                        bytes_to_send -= len(chunk)
+
+                            except (ValueError, IndexError):
+                                # Invalid range header, ignore and send full file
+                                self.send_response(200)
+                                _ = self.send_header('Content-Type', content_type)
+                                _ = self.send_header('Content-Length', str(file_size))
+                                _ = self.send_header('Accept-Ranges', 'bytes')
+                                self.end_headers()
+
+                                with open(path, 'rb') as f:
+                                    _ = self.wfile.write(f.read())
+                        else:
+                            # No range header, send full file with Accept-Ranges header
+                            self.send_response(200)
+                            _ = self.send_header('Content-Type', content_type)
+                            _ = self.send_header('Content-Length', str(file_size))
+                            _ = self.send_header('Accept-Ranges', 'bytes')
+                            self.end_headers()
+
+                            with open(path, 'rb') as f:
+                                chunk_size = 8192
+                                while True:
+                                    chunk = f.read(chunk_size)
+                                    if not chunk:
+                                        break
+                                    _ = self.wfile.write(chunk)
 
                     @override
                     def handle_one_request(self) -> None:
