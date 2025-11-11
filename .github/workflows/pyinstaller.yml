@@ -17,7 +17,6 @@ jobs:
           spec: 'matchbox.spec'
           requirements: 'pyinstaller-build-reqs.txt'
           clean_checkout: false
-          upload_exe_with_name: 'MatchBox_Mac_Binary'
       - name: Make DMG
         uses: unofficial-rev-port/create-dmg-action-fixed-icon@v0.1.2
         with:
@@ -26,7 +25,7 @@ jobs:
       - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
-          name: 'MatchBox_Mac_DMG'
+          name: 'MatchBox_macOS'
           path: './MatchBox.dmg'
   pyinstaller-build-win:
     runs-on: windows-latest
