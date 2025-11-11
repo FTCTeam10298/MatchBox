@@ -48,7 +48,7 @@ class MatchBoxConfig:
         self.obs_host: str = 'localhost'
         self.obs_port: int = 4455
         self.obs_password: str = ''
-        self.output_dir: str = './match_clips'
+        self.output_dir: str = sys.platform == "darwin" and getattr(sys, 'frozen', False) and str(Path.home() / "Desktop" / "match_clips") or sys.platform == "win32" and ".\\match_clips" or './match_clips'
         self.web_port: int = 80
         self.mdns_name: str = 'ftcvideo.local'
         self.field_scene_mapping: dict[int, str] = {1: "Field 1", 2: "Field 2"}
@@ -1283,9 +1283,9 @@ class MatchBoxGUI:
         try:
             # First load current GUI values into config
             self.load_gui_to_config()
-            with open("matchbox_config.json", "w") as f:
+            with open(get_config_path(), "w") as f:
                 json.dump(vars(self.config), f, indent=2)
-            self.log("Configuration saved to matchbox_config.json")
+            self.log("Configuration saved to " + get_config_path())
         except Exception as e:
             self.log_error(f"Error saving configuration: {e}")
             _ = messagebox.showerror("Error", f"Failed to save configuration: {e}")
@@ -1407,6 +1407,16 @@ class MatchBoxGUI:
             time.sleep(1)
         self.root.destroy()
 
+def get_config_path() -> str:
+    """Get the appropriate path for saving config file"""
+    # Check if running in macOS app bundle
+    if sys.platform == "darwin" and getattr(sys, 'frozen', False):
+        # Running in a macOS app bundle
+        desktop = Path.home() / "Desktop"
+        return str(desktop / "matchbox_config.json")
+    
+    # Default: save in current directory
+    return "matchbox_config.json"
 
 def main() -> None:
     """Main function"""
@@ -1438,13 +1448,13 @@ def main() -> None:
             sys.exit(1)
     else:
         try:
-            with open("matchbox_config.json", "r") as f:
+            with open(get_config_path(), "r") as f:
                 file = json.load(f)  # pyright: ignore[reportAny]
                 config.__dict__.update(file)  # pyright: ignore[reportAny]
                 # Fix field_scene_mapping keys to be integers (JSON deserializes them as strings)
                 if 'field_scene_mapping' in file:
                     config.field_scene_mapping = {int(k): v for k, v in file['field_scene_mapping'].items()}  # pyright: ignore[reportAny]
-            logger.info("Configuration loaded from matchbox_config.json")
+            logger.info("Configuration loaded from " + get_config_path())
         except FileNotFoundError:
             logger.warning("No configuration file found")
         except Exception as e:
