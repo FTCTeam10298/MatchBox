@@ -1000,7 +1000,7 @@ class MatchBoxGUI:
         except ModuleNotFoundError:
             self.version: str = "dev"
 
-        self.root.title(f'MatchBox™ for FIRST® Tech Challenge™ - v{self.version}')  # pyright: ignore[reportUnknownMemberType]
+        self.root.title(f'MatchBox™ for FIRST® Tech Challenge - v{self.version}')  # pyright: ignore[reportUnknownMemberType]
         self.root.geometry("900x700")
         self.root.resizable(True, True)
 
@@ -1047,7 +1047,7 @@ class MatchBoxGUI:
 
         title_label.insert("1.0", "MatchBox™ for ", "bold")
         title_label.insert("end", "FIRST®", "bold_italic")
-        title_label.insert("end", f" Tech Challenge™ ", "bold")
+        title_label.insert("end", f" Tech Challenge ", "bold")
         title_label.insert("end", f"v{self.version}", "regular")
         title_label.config(state="disabled")  # pyright: ignore[reportUnusedCallResult]
         title_label.pack(pady=(0, 5), padx=(5, 0), fill="x")
