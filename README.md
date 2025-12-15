@@ -6,10 +6,12 @@ MatchBox is a standalone application that integrates with OBS and the *FIRST®* 
 - Local web interface for easy access to match clips
 - Coming soon: Automatic video upload
 
+<img width="941" height="981" alt="image" src="https://github.com/user-attachments/assets/3fbc17b2-c916-47e9-88b6-03cd474c3b4e" />
+
 > [!IMPORTANT]
 > _MatchBox is (currently) an unofficial, community-ran project.  While we hope to someday have it become an official part of FTC, similar to FRC's Webcast Unit, currently MatchBox is entirely community-supported, so please do not bother *FIRST®* with any issues you may encounter._
 > 
-> *FIRST®, FIRST® Robotics Competition, and FIRST® Tech Challenge, are registered trademarks of FIRST® (<www.firstinspires.org>) which is not overseeing, involved with, or responsible for this activity, product, or service.*
+> *FIRST®, FIRST® Robotics Competition, and FIRST® Tech Challenge, are registered trademarks of FIRST® (www.firstinspires.org) which is not overseeing, involved with, or responsible for this activity, product, or service.*
 
 ## Features
 
