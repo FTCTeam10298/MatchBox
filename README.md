@@ -44,7 +44,6 @@ MatchBox is a standalone application that integrates with OBS and the *FIRST®* 
    - **OBS WebSocket Password**: Set in OBS Tools > WebSocket Server Settings
 - (Optional) Configure Scene Mapping tab to match your OBS scene names
 - Set output directory in Video & Web Settings
-
 - Click "Configure OBS Scenes" to auto-create:
    - Field scenes (Field 1, Field 2, etc.)
    - Shared FTC overlay browser source with chroma key filter
