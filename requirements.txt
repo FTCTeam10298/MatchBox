@@ -1,6 +1,7 @@
 # Core MatchBox dependencies
 obs-websocket-py==1.0
 websockets==10.4
+psutil>=5.9.0  # For process priority management
 
 # mDNS/Zeroconf support
 zeroconf>=0.131.0

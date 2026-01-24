@@ -244,6 +244,20 @@ class LocalVideoProcessor:
                 stderr=asyncio.subprocess.PIPE
             )
 
+            # Lower process priority to avoid interfering with OBS stream
+            if process.pid:
+                try:
+                    import psutil
+                    p = psutil.Process(process.pid)
+                    if sys.platform == 'win32':
+                        p.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
+                    else:
+                        p.nice(19)  # Lowest priority on Linux/Mac
+                except ImportError:
+                    logger.debug("psutil not available, skipping priority adjustment")
+                except Exception as e:
+                    logger.debug(f"Could not adjust process priority: {e}")
+
             _, stderr = await process.communicate()
 
             if process.returncode == 0:
