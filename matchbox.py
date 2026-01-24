@@ -31,13 +31,40 @@ import subprocess
 from datetime import datetime, timedelta
 
 # Configure logging
+class GUILogHandler(logging.Handler):
+    """Custom logging handler that routes messages to a GUI callback (thread-safe)"""
+    def __init__(self) -> None:
+        super().__init__()
+        self.root: tk.Tk | None = None
+        self.callback: Callable[[str, str], None] | None = None  # (level, message)
+
+    def set_callback(self, root: tk.Tk, callback: Callable[[str, str], None] | None) -> None:
+        self.root = root
+        self.callback = callback
+
+    @override
+    def handle(self, record: logging.LogRecord) -> bool:
+        # Skip lock acquisition - we just schedule a callback
+        if self.callback and self.root:
+            try:
+                _ = self.root.after_idle(self.callback, record.levelname, record.getMessage())
+            except Exception:
+                pass  # GUI might be destroyed
+        return True
+
+    @override
+    def emit(self, record: logging.LogRecord) -> None:
+        pass  # Required override - actual work done in handle()
+
 log_filename = f"matchbox_{datetime.now().strftime('%Y-%m-%d')}.log"
+gui_handler = GUILogHandler()
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
     handlers=[
         logging.StreamHandler(),
         logging.FileHandler(log_filename),
+        gui_handler,
     ]
 )
 logger = logging.getLogger("matchbox")
@@ -119,43 +146,19 @@ class MatchBoxCore:
         self.local_video_processor: LocalVideoProcessor | None = None
         self.obs_recording_path: str | None = None
 
-        # Callbacks
-        self.log_callback: Callable[[str], None] | None = None
-        self.log_error_callback: Callable[[str], None] | None = None
-
         # Create output directory with event code subfolder
         self.clips_dir: Path = Path(self.config.output_dir).absolute() / self.config.event_code
         self.clips_dir.mkdir(exist_ok=True, parents=True)
-
-    def set_log_callback(self, callback: Callable[[str], None]) -> None:
-        """Set callback for logging messages"""
-        self.log_callback = callback
-
-    def set_log_error_callback(self, callback: Callable[[str], None]) -> None:
-        """Set callback for logging error messages"""
-        self.log_error_callback = callback
-
-    def log(self, message: str) -> None:
-        """Log message to console and callback"""
-        logger.info(message)
-        if self.log_callback:
-            self.log_callback(message)
-
-    def log_error(self, message: str) -> None:
-        """Log message to console and callback"""
-        logger.error(message)
-        if self.log_error_callback:
-            self.log_error_callback(message)
 
     def connect_to_obs(self) -> bool:
         """Connect to OBS WebSocket server"""
         try:
             self.obs_ws = obswebsocket.obsws(self.config.obs_host, self.config.obs_port, self.config.obs_password)
             self.obs_ws.connect()  # pyright: ignore[reportUnknownMemberType]
-            self.log("Connected to OBS WebSocket server")
+            logger.info("Connected to OBS WebSocket server")
             return True
         except Exception as e:
-            self.log_error(f"Error connecting to OBS: {e}")
+            logger.error(f"Error connecting to OBS: {e}")
             return False
 
     def disconnect_from_obs(self) -> None:
@@ -163,9 +166,9 @@ class MatchBoxCore:
         if self.obs_ws:
             try:
                 self.obs_ws.disconnect()  # pyright: ignore[reportUnknownMemberType]
-                self.log("Disconnected from OBS WebSocket server")
+                logger.info("Disconnected from OBS WebSocket server")
             except Exception as e:
-                self.log_error(f"Error disconnecting from OBS: {e}")
+                logger.error(f"Error disconnecting from OBS: {e}")
 
     def configure_obs_scenes(self) -> bool:
         """Auto-configure OBS scenes and sources"""
@@ -176,35 +179,35 @@ class MatchBoxCore:
         assert self.obs_ws is not None
 
         try:
-            self.log("Starting OBS scene configuration...")
+            logger.info("Starting OBS scene configuration...")
 
             # Step 1: Get current scenes and sources
-            self.log("Getting current scenes...")
+            logger.info("Getting current scenes...")
             scenes_response = self.obs_ws.call(obsrequests.GetSceneList())  # pyright: ignore[reportAny, reportUnknownMemberType, reportUnknownVariableType]
             existing_scenes = [scene['sceneName'] for scene in scenes_response.datain['scenes']]  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
-            self.log(f"Found {len(existing_scenes)} existing scenes")  # pyright: ignore[reportUnknownArgumentType]
+            logger.info(f"Found {len(existing_scenes)} existing scenes")  # pyright: ignore[reportUnknownArgumentType]
 
             # Step 2: Create field scenes FIRST
-            self.log("Creating field scenes...")
+            logger.info("Creating field scenes...")
             for field_num in range(1, 4):
                 scene_name = f"Field {field_num}"
                 if scene_name not in existing_scenes:
                     try:
                         self.obs_ws.call(obsrequests.CreateScene(sceneName=scene_name))  # pyright: ignore[reportAny, reportUnknownMemberType]
-                        self.log(f"✓ Created scene: {scene_name}")
+                        logger.info(f"✓ Created scene: {scene_name}")
                     except Exception as e:
-                        self.log_error(f"✗ Failed to create scene {scene_name}: {e}")
+                        logger.error(f"✗ Failed to create scene {scene_name}: {e}")
                 else:
-                    self.log(f"✓ Scene already exists: {scene_name}")
+                    logger.info(f"✓ Scene already exists: {scene_name}")
 
             # Step 3: Get existing sources to avoid duplicates
-            self.log("Checking existing sources...")
+            logger.info("Checking existing sources...")
             try:
                 sources_response = self.obs_ws.call(obsrequests.GetInputList())  # pyright: ignore[reportAny, reportUnknownMemberType, reportUnknownVariableType]
                 existing_sources = [source['inputName'] for source in sources_response.datain['inputs']]  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
-                self.log(f"Found {len(existing_sources)} existing sources")  # pyright: ignore[reportUnknownArgumentType]
+                logger.info(f"Found {len(existing_sources)} existing sources")  # pyright: ignore[reportUnknownArgumentType]
             except Exception as e:
-                self.log_error(f"Could not get input list: {e}")
+                logger.error(f"Could not get input list: {e}")
                 existing_sources = []
 
             # Step 4: Create or update shared overlay source
@@ -215,7 +218,7 @@ class MatchBoxCore:
                           f"&overlay=true&overlayColor=%23ff00ff&allianceSelectionStyle=classic&awardsStyle=overlay"
                           f"&dualDivisionRankingStyle=sideBySide&rankingsFontSize=larger&showMeetRankings=false"
                           f"&rankingsAllTeams=true")
-            self.log(f"Overlay URL: {overlay_url}")
+            logger.info(f"Overlay URL: {overlay_url}")
 
             # Browser source settings
             browser_settings = {
@@ -229,7 +232,7 @@ class MatchBoxCore:
             }
 
             if shared_overlay_name not in existing_sources:
-                self.log("Creating shared overlay source...")
+                logger.info("Creating shared overlay source...")
 
                 try:
                     # Create the browser source - need to specify a scene for newer API
@@ -242,24 +245,24 @@ class MatchBoxCore:
                             inputKind="browser_source",
                             inputSettings=browser_settings
                         ))
-                        self.log("✓ Used CreateInput API with scene")
+                        logger.info("✓ Used CreateInput API with scene")
                     except Exception as e1:
-                        self.log_error(f"CreateInput failed ({e1}), trying CreateSource...")
+                        logger.error(f"CreateInput failed ({e1}), trying CreateSource...")
                         # Fallback to older API method
                         self.obs_ws.call(obsrequests.CreateSource(  # pyright: ignore[reportUnknownMemberType, reportAny]
                             sourceName=shared_overlay_name,
                             sourceKind="browser_source",
                             sourceSettings=browser_settings
                         ))
-                        self.log("✓ Used CreateSource API")
+                        logger.info("✓ Used CreateSource API")
 
-                    self.log(f"✓ Created shared overlay source: {shared_overlay_name}")
+                    logger.info(f"✓ Created shared overlay source: {shared_overlay_name}")
 
                     # Wait for source to be fully created
                     time.sleep(1.0)
 
                     # Step 5: Add chroma key filter
-                    self.log("Adding chroma key filter...")
+                    logger.info("Adding chroma key filter...")
                     chroma_settings = {
                         "key_color_type": "magenta",
                         "key_color": 16711935,  # Magenta color value (0xFF00FF)
@@ -281,9 +284,9 @@ class MatchBoxCore:
                                 filterKind="chroma_key_filter_v2",
                                 filterSettings=chroma_settings
                             ))
-                            self.log("✓ Added chroma key filter (v2)")
+                            logger.info("✓ Added chroma key filter (v2)")
                         except Exception as e1:
-                            self.log_error(f"v2 filter failed ({e1}), trying v1...")
+                            logger.error(f"v2 filter failed ({e1}), trying v1...")
                             # Fallback to older filter name
                             self.obs_ws.call(obsrequests.CreateSourceFilter(  # pyright: ignore[reportUnknownMemberType, reportAny]
                                 sourceName=shared_overlay_name,
@@ -291,29 +294,29 @@ class MatchBoxCore:
                                 filterKind="chroma_key_filter",
                                 filterSettings=chroma_settings
                             ))
-                            self.log("✓ Added chroma key filter (v1)")
+                            logger.info("✓ Added chroma key filter (v1)")
 
                     except Exception as e:
-                        self.log_error(f"✗ Could not add chroma key filter: {e}")
+                        logger.error(f"✗ Could not add chroma key filter: {e}")
 
                 except Exception as e:
-                    self.log_error(f"✗ Error creating shared overlay source: {e}")
+                    logger.error(f"✗ Error creating shared overlay source: {e}")
                     # Don't return False here, continue with scene setup
             else:
                 # Update existing overlay source with new URL
-                self.log(f"Updating existing overlay source: {shared_overlay_name}")
+                logger.info(f"Updating existing overlay source: {shared_overlay_name}")
                 try:
                     self.obs_ws.call(obsrequests.SetInputSettings(  # pyright: ignore[reportUnknownMemberType, reportAny]
                         inputName=shared_overlay_name,
                         inputSettings={"url": overlay_url},
                         overlay=True  # Overlay mode: only update URL, keep other settings
                     ))
-                    self.log(f"✓ Updated overlay URL for existing source")
+                    logger.info(f"✓ Updated overlay URL for existing source")
                 except Exception as e:
-                    self.log_error(f"✗ Failed to update overlay URL: {e}")
+                    logger.error(f"✗ Failed to update overlay URL: {e}")
 
             # Step 6: Add the shared overlay to each field scene
-            self.log("Adding overlay to scenes...")
+            logger.info("Adding overlay to scenes...")
             for field_num in range(1, 4):
                 scene_name = f"Field {field_num}"
 
@@ -329,7 +332,7 @@ class MatchBoxCore:
                     if shared_overlay_name not in existing_items:
                         # Skip Field 1 if we created the source there already
                         if scene_name == "Field 1" and shared_overlay_name not in existing_sources:
-                            self.log(f"✓ Overlay already in {scene_name} (created there)")
+                            logger.info(f"✓ Overlay already in {scene_name} (created there)")
                         else:
                             try:
                                 # Try newer API first
@@ -337,27 +340,27 @@ class MatchBoxCore:
                                     sceneName=scene_name,
                                     sourceName=shared_overlay_name
                                 ))
-                                self.log(f"✓ Added overlay to {scene_name} (CreateSceneItem)")
+                                logger.info(f"✓ Added overlay to {scene_name} (CreateSceneItem)")
                             except Exception as e1:
-                                self.log_error(f"CreateSceneItem failed ({e1}), trying AddSceneItem...")
+                                logger.error(f"CreateSceneItem failed ({e1}), trying AddSceneItem...")
                                 # Fallback to older API method
                                 self.obs_ws.call(obsrequests.AddSceneItem(  # pyright: ignore[reportUnknownMemberType, reportAny]
                                     sceneName=scene_name,
                                     sourceName=shared_overlay_name
                                 ))
-                                self.log(f"✓ Added overlay to {scene_name} (AddSceneItem)")
+                                logger.info(f"✓ Added overlay to {scene_name} (AddSceneItem)")
 
                     else:
-                        self.log(f"✓ Overlay already exists in {scene_name}")
+                        logger.info(f"✓ Overlay already exists in {scene_name}")
 
                 except Exception as e:
-                    self.log_error(f"✗ Could not add overlay to {scene_name}: {e}")
+                    logger.error(f"✗ Could not add overlay to {scene_name}: {e}")
 
-            self.log("✅ OBS scene configuration completed successfully!")
+            logger.info("✅ OBS scene configuration completed successfully!")
             return True
 
         except Exception as e:
-            self.log_error(f"✗ Error configuring OBS scenes: {e}")
+            logger.error(f"✗ Error configuring OBS scenes: {e}")
             return False
 
     def get_obs_recording_path(self) -> str | None:
@@ -377,7 +380,7 @@ class MatchBoxCore:
             # Check if recording is active
             record_status = self.obs_ws.call(obsrequests.GetRecordStatus())  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAny]
             if not record_status.datain.get('outputActive', False):  # pyright: ignore[reportUnknownMemberType]
-                self.log_error("OBS is not currently recording")
+                logger.error("OBS is not currently recording")
                 return None
 
             # Get recording duration (in milliseconds)
@@ -405,7 +408,7 @@ class MatchBoxCore:
                     recording_path = record_status.datain.get('outputPath')  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
 
             if recording_path:
-                self.log(f"Found OBS recording: {recording_path} (started at {recording_start_time.strftime('%H:%M:%S')}, duration: {output_timecode})")
+                logger.info(f"Found OBS recording: {recording_path} (started at {recording_start_time.strftime('%H:%M:%S')}, duration: {output_timecode})")
                 return {
                     'recording_path': recording_path,
                     'recording_start_time': recording_start_time,
@@ -413,17 +416,17 @@ class MatchBoxCore:
                     'recording_timecode': output_timecode
                 }
             else:
-                self.log_error("Could not determine OBS recording path")
+                logger.error("Could not determine OBS recording path")
                 return None
 
         except Exception as e:
-            self.log_error(f"Error getting OBS recording info: {e}")
+            logger.error(f"Error getting OBS recording info: {e}")
             return None
 
     def setup_local_video_processor(self) -> bool:
         """Initialize local video processor with OBS recording path"""
         try:
-            self.log("🔍 Setting up local video processor...")
+            logger.info("🔍 Setting up local video processor...")
 
             # Get current OBS recording path
             recording_path = self.get_obs_recording_path()
@@ -442,40 +445,40 @@ class MatchBoxCore:
                 self.local_video_processor.start_monitoring()
 
                 self.obs_recording_path = recording_path
-                self.log(f"✅ Local video processor ready: {recording_path}")
+                logger.info(f"✅ Local video processor ready: {recording_path}")
                 return True
             else:
-                self.log_error("❌ Could not setup local video processor - no recording path")
-                self.log_error("   Make sure OBS is recording before starting MatchBox")
+                logger.error("❌ Could not setup local video processor - no recording path")
+                logger.error("   Make sure OBS is recording before starting MatchBox")
                 return False
 
         except Exception as e:
-            self.log_error(f"❌ Error setting up local video processor: {e}")
+            logger.error(f"❌ Error setting up local video processor: {e}")
             import traceback
-            self.log_error(f"❌ Full error traceback: {traceback.format_exc()}")
+            logger.error(f"❌ Full error traceback: {traceback.format_exc()}")
             return False
 
     def switch_scene(self, field_number: int) -> bool:
         """Switch OBS scene based on field number"""
         if field_number not in self.config.field_scene_mapping:
-            self.log_error(f"No scene mapping found for Field {field_number}")
+            logger.error(f"No scene mapping found for Field {field_number}")
             return False
 
         if not self.obs_ws:
-            self.log_error("Error switching scene: OBS WebSocket not connected")
+            logger.error("Error switching scene: OBS WebSocket not connected")
             return False
 
         scene_name = self.config.field_scene_mapping[field_number]
         try:
             response = self.obs_ws.call(obsrequests.SetCurrentProgramScene(sceneName=scene_name))  # pyright: ignore[reportUnknownMemberType, reportAny, reportUnknownVariableType]
             if response.status:  # pyright: ignore[reportUnknownMemberType]
-                self.log(f"Switched to scene: {scene_name} for Field {field_number}")
+                logger.info(f"Switched to scene: {scene_name} for Field {field_number}")
                 return True
             else:
-                self.log_error(f"Failed to switch scene: {response.error}")  # pyright: ignore[reportUnknownMemberType]
+                logger.error(f"Failed to switch scene: {response.error}")  # pyright: ignore[reportUnknownMemberType]
                 return False
         except Exception as e:
-            self.log_error(f"Error switching scene: {e}")
+            logger.error(f"Error switching scene: {e}")
             return False
 
     def start_web_server(self) -> bool:
@@ -488,9 +491,9 @@ class MatchBoxCore:
             # Create initial index.html with existing files scan
             try:
                 self.create_initial_web_interface()
-                self.log(f"Created index.html with existing files scan")
+                logger.info(f"Created index.html with existing files scan")
             except Exception as e:
-                self.log_error(f"Error creating initial index.html: {e}")
+                logger.error(f"Error creating initial index.html: {e}")
 
             # Custom handler that serves from a specific directory without changing working directory
             def make_handler(directory: str) -> type[SimpleHTTPRequestHandler]:
@@ -617,15 +620,15 @@ class MatchBoxCore:
                             pass
                         except Exception as e:
                             # Log other unexpected errors
-                            self.log_error(f"Request handling error: {e}")
+                            logger.error(f"Request handling error: {e}")
 
                 return MatchClipHandler
 
             def run_server() -> None:
                 try:
-                    self.log(f"Starting web server on port {self.config.web_port}")
-                    self.log(f"Serving directory: {clips_dir_str}")
-                    self.log(f"Access match clips at http://localhost:{self.config.web_port}")
+                    logger.info(f"Starting web server on port {self.config.web_port}")
+                    logger.info(f"Serving directory: {clips_dir_str}")
+                    logger.info(f"Access match clips at http://localhost:{self.config.web_port}")
 
                     # Create handler class with the specific directory
                     HandlerClass = make_handler(clips_dir_str)
@@ -637,11 +640,11 @@ class MatchBoxCore:
                     self.web_server.serve_forever()
                 except OSError as e:
                     if "Address already in use" in str(e):
-                        self.log_error(f"Web server port {self.config.web_port} is already in use")
+                        logger.error(f"Web server port {self.config.web_port} is already in use")
                     else:
-                        self.log_error(f"Web server OS error: {e}")
+                        logger.error(f"Web server OS error: {e}")
                 except Exception as e:
-                    self.log_error(f"Web server error: {e}")
+                    logger.error(f"Web server error: {e}")
 
             self.web_thread = threading.Thread(target=run_server, daemon=True)
             self.web_thread.start()
@@ -652,7 +655,7 @@ class MatchBoxCore:
             return True
 
         except Exception as e:
-            self.log_error(f"Error starting web server: {e}")
+            logger.error(f"Error starting web server: {e}")
             return False
 
     def stop_web_server(self) -> None:
@@ -661,9 +664,9 @@ class MatchBoxCore:
             try:
                 self.web_server.shutdown()
                 self.web_server.server_close()
-                self.log("Web server stopped")
+                logger.info("Web server stopped")
             except Exception as e:
-                self.log_error(f"Error stopping web server: {e}")
+                logger.error(f"Error stopping web server: {e}")
 
     def register_mdns_service(self) -> bool:
         """Register mDNS service for local network discovery"""
@@ -685,7 +688,7 @@ class MatchBoxCore:
                 except:
                     pass  # Fallback to hostname resolution
 
-                self.log(f"📡 mDNS: Using IP {local_ip}")
+                logger.info(f"📡 mDNS: Using IP {local_ip}")
 
                 # Create Zeroconf instance in this thread
                 self.zeroconf = Zeroconf()
@@ -715,13 +718,13 @@ class MatchBoxCore:
                 )
 
                 self.zeroconf.register_service(self.service_info)
-                self.log(f"✅ mDNS service registered: http://{mdns_name}:{self.config.web_port}")
-                self.log(f"📡 Access from network: {local_ip}:{self.config.web_port}")
+                logger.info(f"✅ mDNS service registered: http://{mdns_name}:{self.config.web_port}")
+                logger.info(f"📡 Access from network: {local_ip}:{self.config.web_port}")
 
             except Exception as e:
                 import traceback
-                self.log_error(f"❌ Failed to register mDNS service: {type(e).__name__}: {e}")
-                self.log_error(f"❌ Full traceback: {traceback.format_exc()}")
+                logger.error(f"❌ Failed to register mDNS service: {type(e).__name__}: {e}")
+                logger.error(f"❌ Full traceback: {traceback.format_exc()}")
 
         # Start registration in background thread
         mdns_thread = threading.Thread(target=_register_in_thread, daemon=True)
@@ -733,7 +736,7 @@ class MatchBoxCore:
         try:
             if self.service_info and self.zeroconf:
                 self.zeroconf.unregister_service(self.service_info)
-                self.log("mDNS service unregistered")
+                logger.info("mDNS service unregistered")
 
             if self.zeroconf:
                 self.zeroconf.close()
@@ -741,12 +744,12 @@ class MatchBoxCore:
                 self.service_info = None
 
         except Exception as e:
-            self.log_error(f"Error unregistering mDNS service: {e}")
+            logger.error(f"Error unregistering mDNS service: {e}")
 
     async def monitor_ftc_websocket(self) -> None:
         """Monitor FTC scoring system WebSocket for match events"""
         if not self.connect_to_obs():
-            self.log_error("Failed to connect to OBS. Exiting.")
+            logger.error("Failed to connect to OBS. Exiting.")
             return
 
         # Start web server
@@ -756,17 +759,17 @@ class MatchBoxCore:
         _ = self.setup_local_video_processor()
 
         ftc_ws_url = f"ws://{self.config.scoring_host}:{self.config.scoring_port}/stream/display/command/?code={self.config.event_code}"
-        self.log(f"Connecting to FTC WebSocket: {ftc_ws_url}")
-        self.log(f"Field-scene mapping: {json.dumps(self.config.field_scene_mapping, indent=2)}")
+        logger.info(f"Connecting to FTC WebSocket: {ftc_ws_url}")
+        logger.info(f"Field-scene mapping: {json.dumps(self.config.field_scene_mapping, indent=2)}")
 
         self.running = True
         try:
             async with websockets.client.connect(ftc_ws_url) as websocket:
                 self.ftc_websocket = websocket
-                self.log("Connected to FTC scoring system WebSocket")
+                logger.info("Connected to FTC scoring system WebSocket")
 
                 # Drain initial backlog of old events for 5 seconds
-                self.log("⏳ Draining initial backlog of old events...")
+                logger.info("⏳ Draining initial backlog of old events...")
                 backlog_end_time = time.time() + 5.0
                 backlog_count = 0
 
@@ -780,8 +783,8 @@ class MatchBoxCore:
                         continue
 
                 if backlog_count > 0:
-                    self.log(f"🗑️ Discarded {backlog_count} old events from backlog")
-                self.log("✅ Ready to process new FTC events")
+                    logger.info(f"🗑️ Discarded {backlog_count} old events from backlog")
+                logger.info("✅ Ready to process new FTC events")
 
                 while self.running:
                     message = ""
@@ -797,44 +800,44 @@ class MatchBoxCore:
 
                             # FIXME: this feels unnecessary, just check the actual output structure
                             if field_number is not None and field_number != self.current_field:
-                                self.log(f"Field change detected: {self.current_field} -> {field_number}")
+                                logger.info(f"Field change detected: {self.current_field} -> {field_number}")
                                 if self.switch_scene(field_number):
                                     self.current_field = field_number
 
                         elif data.get("type") == "START_MATCH":
                             # Match started - schedule delayed clip generation
                             match_info: dict[str, object] = cast(dict[str, object], data.get("params", {}))
-                            self.log(f"🎬 Match started: {match_info}")
+                            logger.info(f"🎬 Match started: {match_info}")
 
                             # Add timestamp for accurate clip timing
                             match_info['start_timestamp'] = time.time()
 
                             # Schedule clip generation to start after full match duration
                             if self.local_video_processor:
-                                self.log("🎬 Scheduling delayed clip generation...")
+                                logger.info("🎬 Scheduling delayed clip generation...")
                                 _ = asyncio.create_task(self.generate_match_clip_delayed(match_info))
                             else:
-                                self.log_error("❌ Local video processor not available for clipping")
+                                logger.error("❌ Local video processor not available for clipping")
 
                     except asyncio.TimeoutError:
                         continue
                     except json.JSONDecodeError as e:
                         if message != "pong":
-                            self.log_error(f"Error decoding message: {e}")
+                            logger.error(f"Error decoding message: {e}")
                     except websockets.exceptions.ConnectionClosed:
                         if self.running:
                             raise
                     except Exception as e:
                         if self.running:
-                            self.log_error(f"Error processing message: {e}")
+                            logger.error(f"Error processing message: {e}")
 
         except asyncio.CancelledError:
-            self.log_error("WebSocket monitoring cancelled")
+            logger.error("WebSocket monitoring cancelled")
         except websockets.exceptions.ConnectionClosed:
-            self.log_error("Connection to FTC scoring system closed. Check server and event code.")
+            logger.error("Connection to FTC scoring system closed. Check server and event code.")
         except Exception as e:
             if self.running:
-                self.log_error(f"WebSocket error: {e}")
+                logger.error(f"WebSocket error: {e}")
         finally:
             await self.shutdown()
 
@@ -847,29 +850,29 @@ class MatchBoxCore:
 
         total_wait_time: float = match_duration + post_match_buffer + safety_margin
 
-        self.log(f"🎬 Waiting {total_wait_time} seconds for match to complete before generating clip...")
+        logger.info(f"🎬 Waiting {total_wait_time} seconds for match to complete before generating clip...")
         await asyncio.sleep(total_wait_time)
 
-        self.log("🎬 Match duration complete - starting clip generation...")
+        logger.info("🎬 Match duration complete - starting clip generation...")
         await self.generate_match_clip(match_info)
 
     async def generate_match_clip(self, match_info: dict[str, object]) -> None:
         """Generate a match clip using the local video processor"""
         try:
-            self.log(f"🎬 Generating clip for match: {match_info}")
+            logger.info(f"🎬 Generating clip for match: {match_info}")
 
             # Double-check processor is available
             if not self.local_video_processor:
-                self.log_error("❌ Local video processor is None!")
+                logger.error("❌ Local video processor is None!")
                 return
 
             # Fetch fresh recording info from OBS (path + start time)
             # This handles cases where recording was restarted between matches
-            self.log("🎬 Fetching current OBS recording info...")
+            logger.info("🎬 Fetching current OBS recording info...")
             obs_info = self.get_obs_recording_info()
 
             if not obs_info:
-                self.log_error("❌ Could not get OBS recording info - cannot create clip")
+                logger.error("❌ Could not get OBS recording info - cannot create clip")
                 return
 
             # Add OBS recording info to match_info for the video processor
@@ -878,24 +881,24 @@ class MatchBoxCore:
             match_info_with_obs['obs_recording_start_time'] = obs_info['recording_start_time']
 
             # Extract clip using local video processor
-            self.log("🎬 Calling local_video_processor.extract_clip()...")
+            logger.info("🎬 Calling local_video_processor.extract_clip()...")
             clip_path = await self.local_video_processor.extract_clip(match_info_with_obs)
-            self.log(f"🎬 extract_clip() returned: {clip_path}")
+            logger.info(f"🎬 extract_clip() returned: {clip_path}")
 
             if clip_path:
-                self.log(f"✅ Match clip created: {clip_path}")
+                logger.info(f"✅ Match clip created: {clip_path}")
                 self.current_match_clips.append(clip_path)
 
                 # Update web interface by refreshing index.html with latest clips
                 await self.update_web_interface_clips()
 
             else:
-                self.log_error(f"❌ Failed to create match clip - extract_clip returned None")
+                logger.error(f"❌ Failed to create match clip - extract_clip returned None")
 
         except Exception as e:
-            self.log_error(f"❌ Error generating match clip: {e}")
+            logger.error(f"❌ Error generating match clip: {e}")
             import traceback
-            self.log_error(f"❌ Full traceback: {traceback.format_exc()}")
+            logger.error(f"❌ Full traceback: {traceback.format_exc()}")
 
     def _scan_video_files(self) -> list[Path]:
         """Scan for video files in clips directory"""
@@ -1276,17 +1279,17 @@ class MatchBoxCore:
                 _ = f.write(html_content)
 
         except Exception as e:
-            self.log_error(f"Error updating web interface: {e}")
+            logger.error(f"Error updating web interface: {e}")
 
     async def shutdown(self) -> None:
         """Gracefully shutdown MatchBox"""
-        self.log("Shutting down MatchBox...")
+        logger.info("Shutting down MatchBox...")
         self.running = False
 
         # Close FTC WebSocket
         if self.ftc_websocket and not self.ftc_websocket.closed:
             await self.ftc_websocket.close()
-            self.log("Closed FTC WebSocket connection")
+            logger.info("Closed FTC WebSocket connection")
 
         # Disconnect from OBS
         self.disconnect_from_obs()
@@ -1298,9 +1301,9 @@ class MatchBoxCore:
         # Stop local video processor
         if self.local_video_processor:
             self.local_video_processor.stop_monitoring()
-            self.log("Stopped local video processor")
+            logger.info("Stopped local video processor")
 
-        self.log("MatchBox shutdown complete")
+        logger.info("MatchBox shutdown complete")
 
 # Function to validate integer input
 # From https://www.tutorialkart.com/python/tkinter/how-to-allow-only-integer-in-entry-widget-in-tkinter-python/
@@ -1464,6 +1467,9 @@ class MatchBoxGUI:
         _ = log_combo.txt.config(state=tk.DISABLED)
 
         self.log_text: tk.Text = log_combo.txt
+
+        # Set up GUI logging handler (thread-safe via root.after_idle)
+        gui_handler.set_callback(self.root, self.log_to_gui)
 
     def create_connection_tab(self, notebook: ttk.Notebook) -> None:
         """Create connection settings tab"""
@@ -1650,12 +1656,12 @@ class MatchBoxGUI:
         _ = self.start_sync_button.config(state=tk.DISABLED)
         _ = self.stop_sync_button.config(state=tk.NORMAL)
         _ = self.sync_status_var.set("Sync: Running")
-        self.log("Sync started")
+        logger.info("Sync started")
 
     def stop_sync(self) -> None:
         """Stop the rsync background thread"""
         self.sync_running = False
-        self.log("Stopping sync...")
+        logger.info("Stopping sync...")
 
         # Update UI immediately
         _ = self.start_sync_button.config(state=tk.NORMAL)
@@ -1696,7 +1702,7 @@ class MatchBoxGUI:
         # Sync entire clips directory (includes all event subdirectories)
         source_path = Path(self.output_dir_var.get()).absolute()
         if not source_path.exists():
-            self.log(f"Sync: Clips directory does not exist yet: {source_path}")
+            logger.info(f"Sync: Clips directory does not exist yet: {source_path}")
             return True  # Not an error, just nothing to sync yet
 
         # Build rsync URL: username@host::module
@@ -1725,7 +1731,7 @@ class MatchBoxGUI:
 
         logger.info(f'cmd: {cmd}')
 
-        self.log(f"Sync: Running rsync to {rsync_url}")
+        logger.info(f"Sync: Running rsync to {rsync_url}")
 
         # Set up environment with password
         env = os.environ.copy()
@@ -1745,22 +1751,22 @@ class MatchBoxGUI:
             if result.returncode == 0:
                 # Count transferred files from output
                 lines = result.stdout.strip().split('\n') if result.stdout.strip() else []
-                self.log(f"Sync: Completed successfully ({len(lines)} items processed)")
+                logger.info(f"Sync: Completed successfully ({len(lines)} items processed)")
                 return True
             else:
-                self.log_error(f"Sync: rsync failed with code {result.returncode}")
+                logger.error(f"Sync: rsync failed with code {result.returncode}")
                 if result.stderr:
-                    self.log_error(f"Sync: {result.stderr.strip()}")
+                    logger.error(f"Sync: {result.stderr.strip()}")
                 return False
 
         except subprocess.TimeoutExpired:
-            self.log_error("Sync: rsync timed out after 5 minutes")
+            logger.error("Sync: rsync timed out after 5 minutes")
             return False
         except FileNotFoundError:
-            self.log_error("Sync: rsync command not found. Please install rsync.")
+            logger.error("Sync: rsync command not found. Please install rsync.")
             return False
         except Exception as e:
-            self.log_error(f"Sync: Error running rsync: {e}")
+            logger.error(f"Sync: Error running rsync: {e}")
             return False
 
     def load_gui_to_config(self):
@@ -1819,9 +1825,9 @@ class MatchBoxGUI:
             self.load_gui_to_config()
             with open(get_config_path(), "w") as f:
                 json.dump(vars(self.config), f, indent=2)
-            self.log("Configuration saved to " + get_config_path())
+            logger.info("Configuration saved to " + get_config_path())
         except Exception as e:
-            self.log_error(f"Error saving configuration: {e}")
+            logger.error(f"Error saving configuration: {e}")
             _ = messagebox.showerror("Error", f"Failed to save configuration: {e}")
 
     def configure_obs_scenes(self) -> None:
@@ -1833,13 +1839,11 @@ class MatchBoxGUI:
 
         # Create temporary MatchBox instance just for OBS configuration
         temp_matchbox = MatchBoxCore(self.config)
-        temp_matchbox.set_log_callback(self.log)
-        temp_matchbox.set_log_error_callback(self.log_error)
 
         if temp_matchbox.configure_obs_scenes():
-            self.log("OBS scenes configured successfully!")
+            logger.info("OBS scenes configured successfully!")
         else:
-            self.log_error("Failed to configure OBS scenes")
+            logger.error("Failed to configure OBS scenes")
 
         temp_matchbox.disconnect_from_obs()
 
@@ -1853,8 +1857,6 @@ class MatchBoxGUI:
 
         # Create MatchBox instance
         self.matchbox = MatchBoxCore(self.config)
-        self.matchbox.set_log_callback(self.log)
-        self.matchbox.set_log_error_callback(self.log_error)
 
         # Create new event loop
         self.async_loop = asyncio.new_event_loop()
@@ -1869,8 +1871,8 @@ class MatchBoxGUI:
         _ = self.configure_obs_button.config(state=tk.DISABLED)
         _ = self.status_var.set("Status: Running 🟢")
 
-        self.log("MatchBox started!")
-        self.log(f"Match clips will be available at http://{self.config.mdns_name}:{self.config.web_port}")
+        logger.info("MatchBox started!")
+        logger.info(f"Match clips will be available at http://{self.config.mdns_name}:{self.config.web_port}")
 
     def run_async_monitoring(self) -> None:
         """Run async monitoring in separate thread"""
@@ -1890,7 +1892,7 @@ class MatchBoxGUI:
     def stop_matchbox(self) -> None:
         """Stop MatchBox operation"""
         if self.matchbox and self.matchbox.running:
-            self.log("Stopping MatchBox...")
+            logger.info("Stopping MatchBox...")
 
             # Cancel monitoring task
             if self.monitor_task and not self.monitor_task.done() and self.async_loop:
@@ -1904,9 +1906,9 @@ class MatchBoxGUI:
                 try:
                     shutdown_task.result(timeout=5)
                 except concurrent.futures.TimeoutError:
-                    self.log_error("Shutdown timed out")
+                    logger.error("Shutdown timed out")
                 except Exception as e:
-                    self.log_error(f"Error during shutdown: {e}")
+                    logger.error(f"Error during shutdown: {e}")
 
             self.matchbox.running = False
 
@@ -1916,20 +1918,12 @@ class MatchBoxGUI:
         _ = self.stop_button.config(state=tk.DISABLED)
         _ = self.configure_obs_button.config(state=tk.NORMAL)
         _ = self.status_var.set("Status: Not Running 🔴")
-        self.log("MatchBox stopped")
+        logger.info("MatchBox stopped")
 
-    def log(self, message: str) -> None:
-        """Log message to GUI"""
+    def log_to_gui(self, level: str, message: str) -> None:
+        """Log message to GUI (called by GUILogHandler)"""
         _ = self.log_text.config(state=tk.NORMAL)
-        _ = self.log_text.insert(tk.END, f"{time.strftime('%H:%M:%S')} [INFO] - {message}\n")
-        _ = self.log_text.see(tk.END)
-        _ = self.log_text.config(state=tk.DISABLED)
-        _ = self.log_text.update_idletasks()  # Force GUI refresh to prevent text disappearing
-
-    def log_error(self, message: str) -> None:
-        """Log message to GUI"""
-        _ = self.log_text.config(state=tk.NORMAL)
-        _ = self.log_text.insert(tk.END, f"{time.strftime('%H:%M:%S')} [ERROR] - {message}\n")
+        _ = self.log_text.insert(tk.END, f"{time.strftime('%H:%M:%S')} [{level}] {message}\n")
         _ = self.log_text.see(tk.END)
         _ = self.log_text.config(state=tk.DISABLED)
         _ = self.log_text.update_idletasks()  # Force GUI refresh to prevent text disappearing
