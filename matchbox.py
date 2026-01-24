@@ -1720,11 +1720,11 @@ class MatchBoxGUI:
             self.log(f"Sync: Clips directory does not exist yet: {source_path}")
             return True  # Not an error, just nothing to sync yet
 
-        # Build rsync URL: rsync://username@host/module/
+        # Build rsync URL: username@host::module
         if username:
-            rsync_url = f"rsync://{username}@{host}/{module}/"
+            rsync_url = f"{username}@{host}::{module}"
         else:
-            rsync_url = f"rsync://{host}/{module}/"
+            rsync_url = f"{host}::{module}"
 
         logger.info(f'Path: {convert_path_for_rsync(source_path)}')
 
@@ -1738,18 +1738,10 @@ class MatchBoxGUI:
         ]
 
         logger.info(f'cmd: {cmd}')
-        _ = messagebox.showinfo(
-            "RSYNC DEBUG",
-            " | ".join(cmd)
-        )
         result = subprocess.run(
             [get_rsync_path(), '--version'],
             capture_output=True,
             text=True
-        )
-        _ = messagebox.showinfo(
-            "rsync --version",
-            result.stdout or result.stderr or "(no output)"
         )
         logger.info(result)
 
