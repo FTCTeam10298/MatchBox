@@ -80,7 +80,7 @@ def convert_path_for_rsync(path: Path) -> str:
     if sys.platform == 'win32':
         # Use native Windows drive paths with forward slashes
         # C:\foo\bar -> C:/foo/bar
-        return path.resolve().as_posix().rstrip('/') + '/'
+        return str(path.resolve()).rstrip('\\') + '\\'
     return str(path.resolve()).rstrip('/') + '/'
 
 
