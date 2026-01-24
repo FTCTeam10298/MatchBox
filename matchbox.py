@@ -59,6 +59,22 @@ def get_rsync_path() -> str:
     return 'rsync'
 
 
+def convert_path_for_rsync(path: Path) -> str:
+    """Convert Windows paths to MSYS2/Cygwin format for rsync"""
+    if sys.platform == 'win32':
+        # Convert C:\path\to\dir to /c/path/to/dir (MSYS2 format)
+        path_str = str(path.absolute())
+        if len(path_str) >= 2 and path_str[1] == ':':
+            drive = path_str[0].lower()
+            rest = path_str[2:].replace('\\', '/')
+            logger.info(f'/{drive}{rest}/')
+            return f'/{drive}{rest}/'
+        logger.info(path_str.replace('\\', '/') + '/')
+        return path_str.replace('\\', '/') + '/'
+    logger.info(str(path) + '/')
+    return str(path) + '/'
+
+
 class MatchBoxConfig:
     def __init__(self):
         # Initialize all values to their defaults
@@ -1706,7 +1722,7 @@ class MatchBoxGUI:
             get_rsync_path(),
             '-avz',
             '--checksum',
-            str(source_path) + '/',  # Trailing slash to sync contents
+            convert_path_for_rsync(source_path),
             rsync_url
         ]
 
