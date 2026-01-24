@@ -1717,6 +1717,9 @@ class MatchBoxGUI:
         if password:
             env['RSYNC_PASSWORD'] = password
 
+        # https://superuser.com/a/1869930
+        env['MSYS_NO_PATHCONV'] = '1'
+
         try:
             result = subprocess.run(
                 cmd,
