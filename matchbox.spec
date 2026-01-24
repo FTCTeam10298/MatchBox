@@ -102,6 +102,111 @@ def download_ffmpeg():
     print(f"[OK] Downloaded ffmpeg binaries to {output_dir}")
     return output_dir
 
+
+def download_rsync():
+    """Download rsync binaries for the current platform"""
+    system = platform.system()
+    output_dir = Path('build') / 'rsync-binaries' / system.lower()
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Check if already downloaded
+    rsync_name = 'rsync.exe' if system == 'Windows' else 'rsync'
+    if (output_dir / rsync_name).exists():
+        print(f"[OK] rsync binaries already present for {system}")
+        return output_dir
+
+    print(f"Downloading rsync binaries for {system}...")
+
+    if system == 'Windows':
+        # Use rsync from MSYS2 - download required packages
+        msys2_base = 'https://repo.msys2.org/msys/x86_64/'
+
+        # Core packages needed for rsync (versions may need updating periodically)
+        packages = [
+            'rsync-3.3.0-1-x86_64.pkg.tar.zst',
+            'msys2-runtime-3.5.4-2-x86_64.pkg.tar.zst',
+            'libzstd-1.5.6-1-x86_64.pkg.tar.zst',
+            'libxxhash-0.8.2-1-x86_64.pkg.tar.zst',
+            'liblz4-1.10.0-1-x86_64.pkg.tar.zst',
+            'libiconv-1.17-1-x86_64.pkg.tar.zst',
+            'libintl-0.22.4-1-x86_64.pkg.tar.zst',
+            'libopenssl-3.4.0-1-x86_64.pkg.tar.zst',
+        ]
+
+        temp_dir = output_dir / 'temp'
+        temp_dir.mkdir(exist_ok=True)
+
+        # Install zstandard for .tar.zst decompression
+        try:
+            import zstandard
+        except ImportError:
+            import subprocess as sp
+            sp.run([sys.executable, '-m', 'pip', 'install', 'zstandard'], check=True)
+            import zstandard
+
+        for pkg in packages:
+            url = msys2_base + pkg
+            archive = temp_dir / pkg
+            print(f"  Fetching {pkg}")
+            try:
+                urllib.request.urlretrieve(url, archive)
+
+                # Decompress .tar.zst and extract
+                with open(archive, 'rb') as f:
+                    dctx = zstandard.ZstdDecompressor()
+                    decompressed = dctx.decompress(f.read())
+
+                # Write decompressed tar and extract
+                tar_path = temp_dir / (pkg.replace('.zst', ''))
+                with open(tar_path, 'wb') as f:
+                    f.write(decompressed)
+
+                with tarfile.open(tar_path, 'r') as tar:
+                    tar.extractall(temp_dir / 'extracted')
+
+                os.remove(tar_path)
+                os.remove(archive)
+            except Exception as e:
+                print(f"  Warning: Could not fetch {pkg}: {e}")
+
+        # Copy binaries to output
+        extracted = temp_dir / 'extracted' / 'usr' / 'bin'
+        if extracted.exists():
+            for f in extracted.iterdir():
+                if f.suffix in ['.exe', '.dll'] or f.name.startswith('msys-'):
+                    shutil.copy2(f, output_dir / f.name)
+                    print(f"  Copied {f.name}")
+
+        if (temp_dir / 'extracted').exists():
+            shutil.rmtree(temp_dir / 'extracted')
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir)
+
+    elif system == 'Darwin':
+        # macOS: rsync is pre-installed, but we can bundle a newer version
+        # Use Homebrew bottle or static build
+        # For now, we'll use the system rsync by not bundling (it's always available on macOS)
+        # If needed, could use: brew fetch rsync and extract the bottle
+        print("  macOS: Using system rsync (pre-installed on all macOS versions)")
+        # Create a shell script wrapper that uses system rsync
+        wrapper = output_dir / 'rsync'
+        wrapper.write_text('#!/bin/sh\nexec /usr/bin/rsync "$@"\n')
+        os.chmod(wrapper, 0o755)
+
+    else:  # Linux
+        # Linux: rsync is typically available, but we can bundle a static build
+        # Use static rsync from official sources or build
+        # For now, create wrapper to use system rsync
+        print("  Linux: Using system rsync (available on virtually all Linux systems)")
+        # Create a shell script wrapper that uses system rsync
+        wrapper = output_dir / 'rsync'
+        wrapper.write_text('#!/bin/sh\nexec /usr/bin/rsync "$@"\n')
+        os.chmod(wrapper, 0o755)
+
+    print(f"[OK] rsync binaries ready at {output_dir}")
+    return output_dir
+
+
 # Download ffmpeg and add to binaries
 ffmpeg_dir = download_ffmpeg()
 system = platform.system()
@@ -115,6 +220,17 @@ elif system == 'Darwin':
 else:  # Linux
     binaries.append((str(ffmpeg_dir / 'ffmpeg'), '.'))
     binaries.append((str(ffmpeg_dir / 'ffprobe'), '.'))
+
+# Download rsync and add to binaries
+rsync_dir = download_rsync()
+
+if system == 'Windows':
+    # Windows needs rsync.exe and Cygwin DLLs
+    for file in os.listdir(rsync_dir):
+        if file.endswith('.exe') or file.endswith('.dll'):
+            binaries.append((str(rsync_dir / file), '.'))
+else:  # macOS and Linux use wrapper scripts
+    binaries.append((str(rsync_dir / 'rsync'), '.'))
 
 print("datas", datas)
 print("binaries", binaries)

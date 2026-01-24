@@ -28,6 +28,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable, cast, override
 from zeroconf import ServiceInfo, Zeroconf
 import os
+import subprocess
 
 # Configure logging
 logging.basicConfig(
@@ -38,6 +39,25 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger("matchbox")
+
+
+def get_rsync_path() -> str:
+    """Get path to bundled rsync binary, or fall back to system PATH"""
+    if getattr(sys, 'frozen', False):
+        # Running in PyInstaller bundle
+        meipass: str | None = getattr(sys, '_MEIPASS', None)
+        if meipass:
+            base_path = Path(meipass)
+            rsync_name = 'rsync.exe' if sys.platform == 'win32' else 'rsync'
+            bundled_path = base_path / rsync_name
+            if bundled_path.exists():
+                logger.debug(f"Using bundled rsync: {bundled_path}")
+                return str(bundled_path)
+
+    # Fall back to system PATH
+    logger.debug("Using system rsync")
+    return 'rsync'
+
 
 class MatchBoxConfig:
     def __init__(self):
@@ -57,6 +77,13 @@ class MatchBoxConfig:
         self.pre_match_buffer_seconds: int = 10
         self.post_match_buffer_seconds: int = 10
         self.match_duration_seconds: int = 158
+        # rsync settings
+        self.rsync_enabled: bool = False
+        self.rsync_host: str = ''
+        self.rsync_module: str = ''
+        self.rsync_username: str = ''
+        self.rsync_password: str = ''
+        self.rsync_interval_seconds: int = 60
 
 class MatchBoxCore:
     """Core MatchBox functionality combining OBS switching and video autosplitting"""
@@ -1315,6 +1342,21 @@ class MatchBoxGUI:
         self.pre_match_buffer_var: tk.IntVar = tk.IntVar()
         self.post_match_buffer_var: tk.IntVar = tk.IntVar()
         self.match_duration_var: tk.IntVar = tk.IntVar()
+        # rsync settings
+        self.rsync_host_var: tk.StringVar = tk.StringVar()
+        self.rsync_module_var: tk.StringVar = tk.StringVar()
+        self.rsync_username_var: tk.StringVar = tk.StringVar()
+        self.rsync_password_var: tk.StringVar = tk.StringVar()
+        self.rsync_interval_var: tk.IntVar = tk.IntVar()
+
+        # Sync thread state
+        self.sync_thread: threading.Thread | None = None
+        self.sync_running: bool = False
+
+        # Sync UI elements (initialized in create_sync_settings_tab)
+        self.start_sync_button: ttk.Button
+        self.stop_sync_button: ttk.Button
+        self.sync_status_var: tk.StringVar
 
         self.create_widgets()
         self.load_config_to_gui(self.config)
@@ -1357,6 +1399,9 @@ class MatchBoxGUI:
 
         # Video settings tab
         self.create_video_settings_tab(notebook)
+
+        # Sync settings tab
+        self.create_sync_settings_tab(notebook)
 
         # Control & Log Frame
         control_frame = ttk.Frame(main_frame, padding="10")
@@ -1524,6 +1569,56 @@ class MatchBoxGUI:
         ttk.Entry(video_frame, textvariable=self.match_duration_var, width=6, validate="key", validatecommand=(self.vcmd, "%P")).grid(
             row=8, column=1, sticky=tk.W, pady=2)
 
+    def create_sync_settings_tab(self, notebook: ttk.Notebook) -> None:
+        """Create sync settings tab for rsync configuration"""
+        sync_frame = ttk.Frame(notebook, padding="10")
+        notebook.add(sync_frame, text="Sync Settings")
+
+        # rsync Settings header
+        ttk.Label(sync_frame, text="Remote Sync (rsync)", font=("", 12, "bold")).grid(
+            row=0, column=0, columnspan=3, sticky=tk.W, pady=(0, 5))
+
+        # Host
+        ttk.Label(sync_frame, text="rsync Host:").grid(row=1, column=0, sticky=tk.W, pady=2, padx=(0, 10))
+        ttk.Entry(sync_frame, textvariable=self.rsync_host_var, width=30).grid(
+            row=1, column=1, sticky=tk.W, pady=2)
+
+        # Module
+        ttk.Label(sync_frame, text="rsync Module:").grid(row=2, column=0, sticky=tk.W, pady=2, padx=(0, 10))
+        ttk.Entry(sync_frame, textvariable=self.rsync_module_var, width=30).grid(
+            row=2, column=1, sticky=tk.W, pady=2)
+
+        # Username
+        ttk.Label(sync_frame, text="Username:").grid(row=3, column=0, sticky=tk.W, pady=2, padx=(0, 10))
+        ttk.Entry(sync_frame, textvariable=self.rsync_username_var, width=30).grid(
+            row=3, column=1, sticky=tk.W, pady=2)
+
+        # Password
+        ttk.Label(sync_frame, text="Password:").grid(row=4, column=0, sticky=tk.W, pady=2, padx=(0, 10))
+        ttk.Entry(sync_frame, textvariable=self.rsync_password_var, width=30, show="*").grid(
+            row=4, column=1, sticky=tk.W, pady=2)
+
+        # Interval
+        ttk.Label(sync_frame, text="Sync interval (seconds):").grid(row=5, column=0, sticky=tk.W, pady=2, padx=(0, 10))
+        ttk.Entry(sync_frame, textvariable=self.rsync_interval_var, width=6, validate="key", validatecommand=(self.vcmd, "%P")).grid(
+            row=5, column=1, sticky=tk.W, pady=2)
+
+        # Control buttons frame
+        sync_button_frame = ttk.Frame(sync_frame)
+        sync_button_frame.grid(row=6, column=0, columnspan=3, sticky=tk.W, pady=(15, 5))
+
+        self.start_sync_button = ttk.Button(sync_button_frame, text="Start Sync",
+                                             command=self.start_sync)
+        self.start_sync_button.pack(side=tk.LEFT, padx=(0, 5))
+
+        self.stop_sync_button = ttk.Button(sync_button_frame, text="Stop Sync",
+                                            command=self.stop_sync, state=tk.DISABLED)
+        self.stop_sync_button.pack(side=tk.LEFT, padx=5)
+
+        # Sync status indicator
+        self.sync_status_var = tk.StringVar(value="Sync: Stopped")
+        ttk.Label(sync_button_frame, textvariable=self.sync_status_var).pack(side=tk.LEFT, padx=(15, 0))
+
     def browse_output_dir(self) -> None:
         """Browse for output directory"""
         directory = filedialog.askdirectory(
@@ -1532,6 +1627,125 @@ class MatchBoxGUI:
         )
         if directory:
             self.output_dir_var.set(directory)
+
+    def start_sync(self) -> None:
+        """Start the rsync background thread"""
+        # Validate settings
+        if not self.rsync_host_var.get():
+            _ = messagebox.showerror("Error", "rsync host is required")
+            return
+        if not self.rsync_module_var.get():
+            _ = messagebox.showerror("Error", "rsync module is required")
+            return
+
+        self.sync_running = True
+        self.sync_thread = threading.Thread(target=self.run_sync_loop, daemon=True)
+        self.sync_thread.start()
+
+        # Update UI
+        _ = self.start_sync_button.config(state=tk.DISABLED)
+        _ = self.stop_sync_button.config(state=tk.NORMAL)
+        _ = self.sync_status_var.set("Sync: Running")
+        self.log("Sync started")
+
+    def stop_sync(self) -> None:
+        """Stop the rsync background thread"""
+        self.sync_running = False
+        self.log("Stopping sync...")
+
+        # Update UI immediately
+        _ = self.start_sync_button.config(state=tk.NORMAL)
+        _ = self.stop_sync_button.config(state=tk.DISABLED)
+        _ = self.sync_status_var.set("Sync: Stopped")
+
+    def run_sync_loop(self) -> None:
+        """Background thread that periodically runs rsync"""
+        while self.sync_running:
+            # Update status
+            _ = self.root.after(0, lambda: self.sync_status_var.set("Sync: Syncing..."))
+
+            success = self.run_rsync()
+
+            if self.sync_running:
+                if success:
+                    _ = self.root.after(0, lambda: self.sync_status_var.set("Sync: Running"))
+                else:
+                    _ = self.root.after(0, lambda: self.sync_status_var.set("Sync: Error (retrying)"))
+
+                # Sleep with periodic checks for shutdown
+                interval = self.rsync_interval_var.get() or 60
+                for _ in range(interval):
+                    if not self.sync_running:
+                        break
+                    time.sleep(1)
+
+        # Thread ending
+        _ = self.root.after(0, lambda: self.sync_status_var.set("Sync: Stopped"))
+
+    def run_rsync(self) -> bool:
+        """Run rsync to sync clips to remote server. Returns True if successful."""
+        host = self.rsync_host_var.get()
+        module = self.rsync_module_var.get()
+        username = self.rsync_username_var.get()
+        password = self.rsync_password_var.get()
+
+        # Sync entire clips directory (includes all event subdirectories)
+        source_path = Path(self.output_dir_var.get()).absolute()
+        if not source_path.exists():
+            self.log(f"Sync: Clips directory does not exist yet: {source_path}")
+            return True  # Not an error, just nothing to sync yet
+
+        # Build rsync URL: rsync://username@host/module/
+        if username:
+            rsync_url = f"rsync://{username}@{host}/{module}/"
+        else:
+            rsync_url = f"rsync://{host}/{module}/"
+
+        # Build rsync command
+        cmd = [
+            get_rsync_path(),
+            '-avz',
+            '--checksum',
+            str(source_path) + '/',  # Trailing slash to sync contents
+            rsync_url
+        ]
+
+        self.log(f"Sync: Running rsync to {rsync_url}")
+
+        # Set up environment with password
+        env = os.environ.copy()
+        if password:
+            env['RSYNC_PASSWORD'] = password
+
+        try:
+            result = subprocess.run(
+                cmd,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=300  # 5 minute timeout
+            )
+
+            if result.returncode == 0:
+                # Count transferred files from output
+                lines = result.stdout.strip().split('\n') if result.stdout.strip() else []
+                self.log(f"Sync: Completed successfully ({len(lines)} items processed)")
+                return True
+            else:
+                self.log_error(f"Sync: rsync failed with code {result.returncode}")
+                if result.stderr:
+                    self.log_error(f"Sync: {result.stderr.strip()}")
+                return False
+
+        except subprocess.TimeoutExpired:
+            self.log_error("Sync: rsync timed out after 5 minutes")
+            return False
+        except FileNotFoundError:
+            self.log_error("Sync: rsync command not found. Please install rsync.")
+            return False
+        except Exception as e:
+            self.log_error(f"Sync: Error running rsync: {e}")
+            return False
 
     def load_gui_to_config(self):
         """Set configuration from GUI"""
@@ -1548,6 +1762,12 @@ class MatchBoxGUI:
         self.config.post_match_buffer_seconds = self.post_match_buffer_var.get()
         self.config.match_duration_seconds = self.match_duration_var.get()
         self.config.field_scene_mapping = {int(k): v.get() for k, v in self.scene_mappings.items()}
+        # rsync settings
+        self.config.rsync_host = self.rsync_host_var.get()
+        self.config.rsync_module = self.rsync_module_var.get()
+        self.config.rsync_username = self.rsync_username_var.get()
+        self.config.rsync_password = self.rsync_password_var.get()
+        self.config.rsync_interval_seconds = self.rsync_interval_var.get()
 
     def load_config_to_gui(self, config: MatchBoxConfig) -> None:
         """Load configuration into GUI"""
@@ -1568,6 +1788,13 @@ class MatchBoxGUI:
         field_scene_mapping = config.field_scene_mapping
         for field_num, scene_var in self.scene_mappings.items():
             scene_var.set(field_scene_mapping.get(field_num, f"Field {field_num}"))
+
+        # Load rsync settings
+        self.rsync_host_var.set(config.rsync_host)
+        self.rsync_module_var.set(config.rsync_module)
+        self.rsync_username_var.set(config.rsync_username)
+        self.rsync_password_var.set(config.rsync_password)
+        self.rsync_interval_var.set(config.rsync_interval_seconds)
 
     def save_config(self) -> None:
         """Save configuration to file"""
