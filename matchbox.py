@@ -22,23 +22,28 @@ import argparse
 import sys
 import logging
 from pathlib import Path
-from local_video_processor import LocalVideoProcessor
 import concurrent.futures
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable, cast, override
 from zeroconf import ServiceInfo, Zeroconf
 import os
 import subprocess
+from datetime import datetime, timedelta
 
 # Configure logging
+log_filename = f"matchbox_{datetime.now().strftime('%Y-%m-%d')}.log"
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
+    format='%(asctime)s [%(levelname)s] %(message)s',
     handlers=[
         logging.StreamHandler(),
+        logging.FileHandler(log_filename),
     ]
 )
 logger = logging.getLogger("matchbox")
+
+# Import after logging is configured so it uses our config
+from local_video_processor import LocalVideoProcessor
 
 
 def get_rsync_path() -> str:
@@ -380,7 +385,6 @@ class MatchBoxCore:
             output_timecode: str = str(record_status.datain.get('outputTimecode', '00:00:00.000'))  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
 
             # Calculate recording start time
-            from datetime import datetime, timedelta
             current_time = datetime.now()
             recording_duration_seconds: float = float(output_duration_ms) / 1000.0
             recording_start_time = current_time - timedelta(seconds=recording_duration_seconds)
