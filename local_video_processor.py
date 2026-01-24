@@ -22,6 +22,10 @@ logger = logging.getLogger("local-video-processor")
 
 def get_ffmpeg_path(binary_name: str = 'ffmpeg') -> str:
     """Get path to bundled ffmpeg binary, or fall back to system PATH"""
+    # Add .exe extension on Windows
+    if sys.platform == 'win32' and not binary_name.endswith('.exe'):
+        binary_name = f"{binary_name}.exe"
+
     if getattr(sys, 'frozen', False):
         # Running in PyInstaller bundle
         # PyInstaller creates a temp folder and stores path in _MEIPASS
