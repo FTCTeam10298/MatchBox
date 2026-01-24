@@ -1717,6 +1717,8 @@ class MatchBoxGUI:
         else:
             rsync_url = f"rsync://{host}/{module}/"
 
+        logger.info(f'Path: {convert_path_for_rsync(source_path)}')
+
         # Build rsync command
         cmd = [
             get_rsync_path(),
@@ -1725,6 +1727,8 @@ class MatchBoxGUI:
             convert_path_for_rsync(source_path),
             rsync_url
         ]
+
+        logger.info(f'cmd: {cmd}')
 
         self.log(f"Sync: Running rsync to {rsync_url}")
 
