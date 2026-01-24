@@ -59,20 +59,29 @@ def get_rsync_path() -> str:
     return 'rsync'
 
 
+# def convert_path_for_rsync(path: Path) -> str:
+#     """Convert Windows paths to MSYS2/Cygwin format for rsync"""
+#     if sys.platform == 'win32':
+#         # Convert C:\path\to\dir to /c/path/to/dir (MSYS2 format)
+#         path_str = str(path.absolute())
+#         if len(path_str) >= 2 and path_str[1] == ':':
+#             drive = path_str[0].lower()
+#             rest = path_str[2:].replace('\\', '/')
+#             logger.info(f'/{drive}{rest}/')
+#             return f'/{drive}{rest}/'
+#         logger.info(path_str.replace('\\', '/') + '/')
+#         return path_str.replace('\\', '/') + '/'
+#     logger.info(str(path) + '/')
+#     return str(path) + '/'
+
+
 def convert_path_for_rsync(path: Path) -> str:
-    """Convert Windows paths to MSYS2/Cygwin format for rsync"""
+    """Convert paths to a format rsync on Windows understands."""
     if sys.platform == 'win32':
-        # Convert C:\path\to\dir to /c/path/to/dir (MSYS2 format)
-        path_str = str(path.absolute())
-        if len(path_str) >= 2 and path_str[1] == ':':
-            drive = path_str[0].lower()
-            rest = path_str[2:].replace('\\', '/')
-            logger.info(f'/{drive}{rest}/')
-            return f'/{drive}{rest}/'
-        logger.info(path_str.replace('\\', '/') + '/')
-        return path_str.replace('\\', '/') + '/'
-    logger.info(str(path) + '/')
-    return str(path) + '/'
+        # Use native Windows drive paths with forward slashes
+        # C:\foo\bar -> C:/foo/bar
+        return path.resolve().as_posix().rstrip('/') + '/'
+    return str(path.resolve()).rstrip('/') + '/'
 
 
 class MatchBoxConfig:
