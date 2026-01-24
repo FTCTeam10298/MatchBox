@@ -28,6 +28,8 @@ MatchBox is a standalone application that integrates with OBS and the *FIRST®* 
   - mDNS support for easy access (http://ftcvideo.local:80)
   - Perfect for anyone on the event network to review matches, even without a full internet connection
 
+<img width="941" height="997" alt="image" src="https://github.com/user-attachments/assets/4b4467ca-b73b-40d4-bd8b-269f168e7924" />
+
 ## Usage
 
 ### Setting up OBS
