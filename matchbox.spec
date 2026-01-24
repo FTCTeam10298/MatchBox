@@ -147,20 +147,14 @@ def download_rsync():
             try:
                 urllib.request.urlretrieve(url, archive)
 
-                # Decompress .tar.zst and extract
-                with open(archive, 'rb') as f:
+                # Decompress .tar.zst using streaming decompression
+                print(f"  Fetched {pkg}, decompressing")
+                with open(archive, 'rb') as compressed:
                     dctx = zstandard.ZstdDecompressor()
-                    decompressed = dctx.decompress(f.read())
+                    with dctx.stream_reader(compressed) as reader:
+                        with tarfile.open(fileobj=reader, mode='r|') as tar:
+                            tar.extractall(temp_dir / 'extracted')
 
-                # Write decompressed tar and extract
-                tar_path = temp_dir / (pkg.replace('.zst', ''))
-                with open(tar_path, 'wb') as f:
-                    f.write(decompressed)
-
-                with tarfile.open(tar_path, 'r') as tar:
-                    tar.extractall(temp_dir / 'extracted')
-
-                os.remove(tar_path)
                 os.remove(archive)
             except Exception as e:
                 print(f"  Warning: Could not fetch {pkg}: {e}")
