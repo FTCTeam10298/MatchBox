@@ -231,6 +231,7 @@ class LocalVideoProcessor:
                 '-i', str(input_path),
                 '-t', str(duration),
                 '-c', 'copy',  # Copy streams without re-encoding for speed
+                '-threads', '1',  # Limit to single thread to minimize impact on stream
                 '-avoid_negative_ts', 'make_zero',
                 str(output_path)
             ]
