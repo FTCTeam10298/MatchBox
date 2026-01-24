@@ -1742,11 +1742,16 @@ class MatchBoxGUI:
             "RSYNC DEBUG",
             " | ".join(cmd)
         )
-        _ = subprocess.run(
+        result = subprocess.run(
             [get_rsync_path(), '--version'],
             capture_output=True,
             text=True
         )
+        _ = messagebox.showinfo(
+            "rsync --version",
+            result.stdout or result.stderr or "(no output)"
+        )
+        logger.info(result)
 
         self.log(f"Sync: Running rsync to {rsync_url}")
 
