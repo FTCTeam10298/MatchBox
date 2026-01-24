@@ -1738,6 +1738,10 @@ class MatchBoxGUI:
         ]
 
         logger.info(f'cmd: {cmd}')
+        _ = messagebox.showinfo(
+            "RSYNC DEBUG",
+            " | ".join(cmd)
+        )
 
         self.log(f"Sync: Running rsync to {rsync_url}")
 
