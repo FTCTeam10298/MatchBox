@@ -918,7 +918,6 @@ class MatchBoxCore:
 
     def _generate_html_content(self, video_files: list[Path]) -> str:
         """Generate HTML content for the web interface"""
-        clips_dir_str = str(self.clips_dir.absolute())
 
         # Generate file list HTML
         if video_files:
@@ -934,7 +933,7 @@ class MatchBoxCore:
         # Attempt to load version
         try:
             from _version import __version__  # pyright: ignore[reportMissingImports, reportUnknownVariableType]
-            version = __version__
+            version = __version__  # pyright: ignore[reportUnknownVariableType]
         except ModuleNotFoundError:
             version: str = "dev"
 

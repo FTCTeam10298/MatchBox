@@ -250,9 +250,9 @@ class LocalVideoProcessor:
                     import psutil
                     p = psutil.Process(process.pid)
                     if sys.platform == 'win32':
-                        p.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
+                        _ = p.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
                     else:
-                        p.nice(19)  # Lowest priority on Linux/Mac
+                        _ = p.nice(19)  # Lowest priority on Linux/Mac
                 except ImportError:
                     logger.debug("psutil not available, skipping priority adjustment")
                 except Exception as e:
