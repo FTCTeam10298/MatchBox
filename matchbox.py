@@ -59,31 +59,6 @@ def get_rsync_path() -> str:
     return 'rsync'
 
 
-# def convert_path_for_rsync(path: Path) -> str:
-#     """Convert Windows paths to MSYS2/Cygwin format for rsync"""
-#     if sys.platform == 'win32':
-#         # Convert C:\path\to\dir to /c/path/to/dir (MSYS2 format)
-#         path_str = str(path.absolute())
-#         if len(path_str) >= 2 and path_str[1] == ':':
-#             drive = path_str[0].lower()
-#             rest = path_str[2:].replace('\\', '/')
-#             logger.info(f'/{drive}{rest}/')
-#             return f'/{drive}{rest}/'
-#         logger.info(path_str.replace('\\', '/') + '/')
-#         return path_str.replace('\\', '/') + '/'
-#     logger.info(str(path) + '/')
-#     return str(path) + '/'
-
-
-def convert_path_for_rsync(path: Path) -> str:
-    """Convert paths to a format rsync on Windows understands."""
-    if sys.platform == 'win32':
-        # Use native Windows drive paths with forward slashes
-        # C:\foo\bar -> C:/foo/bar
-        return str(path.resolve()).rstrip('\\') + '\\'
-    return str(path.resolve()).rstrip('/') + '/'
-
-
 class MatchBoxConfig:
     def __init__(self):
         # Initialize all values to their defaults
@@ -1726,24 +1701,25 @@ class MatchBoxGUI:
         else:
             rsync_url = f"{host}::{module}"
 
-        logger.info(f'Path: {convert_path_for_rsync(source_path)}')
-
         # Build rsync command
+        # On Windows with MSYS2 rsync, use relative path to avoid drive letter colon issues
+        if sys.platform == 'win32':
+            # Change to parent directory and sync using relative path
+            cwd = source_path.parent
+            source_arg = './' + source_path.name + '/'
+        else:
+            cwd = None
+            source_arg = str(source_path) + '/'
+
         cmd = [
             get_rsync_path(),
             '-avz',
             '--checksum',
-            convert_path_for_rsync(source_path),
+            source_arg,
             rsync_url
         ]
 
         logger.info(f'cmd: {cmd}')
-        result = subprocess.run(
-            [get_rsync_path(), '--version'],
-            capture_output=True,
-            text=True
-        )
-        logger.info(result)
 
         self.log(f"Sync: Running rsync to {rsync_url}")
 
@@ -1752,13 +1728,11 @@ class MatchBoxGUI:
         if password:
             env['RSYNC_PASSWORD'] = password
 
-        # https://superuser.com/a/1869930
-        env['MSYS_NO_PATHCONV'] = '1'
-
         try:
             result = subprocess.run(
                 cmd,
                 env=env,
+                cwd=cwd,
                 capture_output=True,
                 text=True,
                 timeout=300  # 5 minute timeout
