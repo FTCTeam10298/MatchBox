@@ -4,6 +4,7 @@ PyInstaller spec file for MatchBox
 Builds standalone executables for Windows, macOS, and Linux
 """
 import os
+import sys
 import platform
 import urllib.request
 import zipfile
@@ -136,13 +137,8 @@ def download_rsync():
         temp_dir = output_dir / 'temp'
         temp_dir.mkdir(exist_ok=True)
 
-        # Install zstandard for .tar.zst decompression
-        try:
-            import zstandard
-        except ImportError:
-            import subprocess as sp
-            sp.run([sys.executable, '-m', 'pip', 'install', 'zstandard'], check=True)
-            import zstandard
+        # zstandard is in requirements.txt for .tar.zst decompression
+        import zstandard
 
         for pkg in packages:
             url = msys2_base + pkg

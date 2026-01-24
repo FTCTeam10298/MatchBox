@@ -10,3 +10,4 @@ sv-ttk>=2.0.0
 
 # Packaging
 pyinstaller>=6.0.0
+zstandard>=0.22.0  # For extracting MSYS2 packages during build (Windows rsync)
