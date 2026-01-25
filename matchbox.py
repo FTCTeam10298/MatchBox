@@ -807,6 +807,10 @@ class MatchBoxCore:
                         elif data.get("type") == "START_MATCH":
                             # Match started - schedule delayed clip generation
                             match_info: dict[str, object] = cast(dict[str, object], data.get("params", {}))
+
+                            # Strip whitespace from matchName (scoring system sometimes includes leading space, notably in playoffs matches)
+                            if 'matchName' in match_info and isinstance(match_info['matchName'], str):
+                                match_info['matchName'] = match_info['matchName'].strip()
                             logger.info(f"🎬 Match started: {match_info}")
 
                             # Add timestamp for accurate clip timing
