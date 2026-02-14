@@ -951,13 +951,18 @@ class MatchBoxCore:
         :root    {{ color-scheme: dark; }}
         body     {{ font-family: sans-serif; margin: 0; background-color: #272727; color: #ddd; }}
         .header  {{ display: inline-flex; gap: 24px; padding: 24px; width: calc(100% - 48px); background-color: #363636; }}
-        h1       {{ align-content: end; color: white; }}
+        h1       {{ align-content: end; color: white; margin-top: auto; margin-bottom: auto; }}
         .content {{ margin: 24px; }}
         .logo    {{ height: 1.2em; width: auto; vertical-align: middle; }}
-        .status  {{ padding: 1px 20px; background: #1e1e1e; border-radius: 5px; margin: 20px 0; }}
+        .status  {{ padding: 1px 20px; background: #1e1e1e; border-radius: 5px; margin: 0 0 20px 0; }}
         .footer  {{ margin-top: 40px; color: #999; font-size: 0.9em; }}
         li       {{ margin: 5px 0; }}
         small    {{ color: #999; margin-left: 10px; }}
+        @media (max-width: 520px) {{
+            h1       {{ font-size: 18px; }}
+            .content {{ margin: 8px; }}
+            ul       {{ padding-left: 20px; }}
+        }}
     </style>
     <meta http-equiv="refresh" content="30">
 </head>
