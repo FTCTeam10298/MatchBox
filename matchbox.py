@@ -32,11 +32,12 @@ from datetime import datetime, timedelta
 
 # Configure logging
 class GUILogHandler(logging.Handler):
-    """Custom logging handler that routes messages to a GUI callback (thread-safe)"""
+    """Custom logging handler that routes messages to a GUI callback and WebSocket broadcaster (thread-safe)"""
     def __init__(self) -> None:
         super().__init__()
         self.root: tk.Tk | None = None
         self.callback: Callable[[str, str], None] | None = None  # (level, message)
+        self.ws_broadcaster: Any = None  # WebSocketBroadcaster, set when WS server starts
 
     def set_callback(self, root: tk.Tk, callback: Callable[[str, str], None] | None) -> None:
         self.root = root
@@ -50,6 +51,12 @@ class GUILogHandler(logging.Handler):
                 _ = self.root.after_idle(self.callback, record.levelname, record.getMessage())
             except Exception:
                 pass  # GUI might be destroyed
+        # Broadcast to WebSocket clients
+        if self.ws_broadcaster:
+            try:
+                self.ws_broadcaster.broadcast_log(record.levelname, record.getMessage())
+            except Exception:
+                pass
         return True
 
     @override
@@ -125,6 +132,8 @@ class MatchBoxCore:
     def __init__(self, config: MatchBoxConfig):
         """Initialize MatchBox with configuration"""
         self.config: MatchBoxConfig = config
+        self._lock: threading.RLock = threading.RLock()
+        self._status_callbacks: list[Callable[[dict[str, object]], None]] = []
 
         # Initialize connection objects
         self.obs_ws: obswebsocket.obsws | None = None
@@ -148,9 +157,71 @@ class MatchBoxCore:
         self.local_video_processor: LocalVideoProcessor | None = None
         self.obs_recording_path: str | None = None
 
+        # WebSocket broadcaster
+        self.ws_broadcaster: Any = None  # WebSocketBroadcaster, set in start_web_server
+
+        # Sync state
+        self.sync_running: bool = False
+        self._sync_thread: threading.Thread | None = None
+
         # Create output directory with event code subfolder
         self.clips_dir: Path = Path(self.config.output_dir).absolute() / self.config.event_code
         self.clips_dir.mkdir(exist_ok=True, parents=True)
+
+    def register_status_callback(self, callback: Callable[[dict[str, object]], None]) -> None:
+        """Register a callback to be notified of status changes"""
+        self._status_callbacks.append(callback)
+
+    def _notify_status_change(self) -> None:
+        """Notify all registered callbacks of a status change"""
+        status = self.get_status()
+        for cb in self._status_callbacks:
+            try:
+                cb(status)
+            except Exception:
+                pass
+
+    def get_status(self) -> dict[str, object]:
+        """Get current status as a dict"""
+        clips_count = 0
+        try:
+            clips_count = len(self._scan_video_files())
+        except Exception:
+            pass
+
+        recording_info = None
+        try:
+            if self.obs_ws:
+                recording_info = self.get_obs_recording_info()
+        except Exception:
+            pass
+
+        return {
+            'running': self.running,
+            'obs_connected': self.obs_ws is not None,
+            'ftc_connected': self.ftc_websocket is not None and not self.ftc_websocket.closed,
+            'current_field': self.current_field,
+            'clips_count': clips_count,
+            'recording_info': recording_info,
+            'event_code': self.config.event_code,
+            'sync_running': self.sync_running,
+        }
+
+    def get_config_dict(self) -> dict[str, object]:
+        """Get current config as a dict"""
+        d = vars(self.config).copy()
+        # Ensure field_scene_mapping keys are strings for JSON
+        d['field_scene_mapping'] = {str(k): v for k, v in self.config.field_scene_mapping.items()}
+        return d
+
+    def update_config(self, data: dict[str, object]) -> None:
+        """Update config from a dict (only known fields)"""
+        with self._lock:
+            for key, value in data.items():
+                if key == 'field_scene_mapping' and isinstance(value, dict):
+                    self.config.field_scene_mapping = {int(k): str(v) for k, v in value.items()}
+                elif hasattr(self.config, key):
+                    setattr(self.config, key, value)
 
     def connect_to_obs(self) -> bool:
         """Connect to OBS WebSocket server"""
@@ -158,6 +229,7 @@ class MatchBoxCore:
             self.obs_ws = obswebsocket.obsws(self.config.obs_host, self.config.obs_port, self.config.obs_password)
             self.obs_ws.connect()  # pyright: ignore[reportUnknownMemberType]
             logger.info("Connected to OBS WebSocket server")
+            self._notify_status_change()
             return True
         except Exception as e:
             logger.error(f"Error connecting to OBS: {e}")
@@ -168,7 +240,9 @@ class MatchBoxCore:
         if self.obs_ws:
             try:
                 self.obs_ws.disconnect()  # pyright: ignore[reportUnknownMemberType]
+                self.obs_ws = None
                 logger.info("Disconnected from OBS WebSocket server")
+                self._notify_status_change()
             except Exception as e:
                 logger.error(f"Error disconnecting from OBS: {e}")
 
@@ -437,6 +511,7 @@ class MatchBoxCore:
             response = self.obs_ws.call(obsrequests.SetCurrentProgramScene(sceneName=scene_name))  # pyright: ignore[reportUnknownMemberType, reportAny, reportUnknownVariableType]
             if response.status:  # pyright: ignore[reportUnknownMemberType]
                 logger.info(f"Switched to scene: {scene_name} for Field {field_number}")
+                self._notify_status_change()
                 return True
             else:
                 logger.error(f"Failed to switch scene: {response.error}")  # pyright: ignore[reportUnknownMemberType]
@@ -446,7 +521,7 @@ class MatchBoxCore:
             return False
 
     def start_web_server(self) -> bool:
-        """Start local web server for match clips"""
+        """Start local web server for match clips and admin API"""
         try:
             # Create clips directory if it doesn't exist
             self.clips_dir.mkdir(exist_ok=True, parents=True)
@@ -459,143 +534,30 @@ class MatchBoxCore:
             except Exception as e:
                 logger.error(f"Error creating initial index.html: {e}")
 
-            # Custom handler that serves from a specific directory without changing working directory
-            def make_handler(directory: str) -> type[SimpleHTTPRequestHandler]:
-                class MatchClipHandler(SimpleHTTPRequestHandler):
-                    def __init__(self, *args: Any, **kwargs: Any) -> None:  # pyright: ignore[reportAny, reportExplicitAny]
-                        super().__init__(*args, directory=directory, **kwargs)  # pyright: ignore[reportAny]
+            # Start WebSocket server on port+1
+            from web_api.websocket_server import WebSocketBroadcaster
+            self.ws_broadcaster = WebSocketBroadcaster(self.config.web_port + 1, self)
+            self.ws_broadcaster.start()
 
-                    @override
-                    def log_message(self, format: str, *args: Any) -> None:  # pyright: ignore[reportAny, reportExplicitAny]
-                        # Enable logging for debugging (but suppress routine errors)
-                        message = format % args
-                        if "Broken pipe" not in message and "Connection reset" not in message:
-                            print(f"HTTP: {message}")
+            # Register status callback to broadcast via WebSocket
+            self.register_status_callback(
+                lambda status: self.ws_broadcaster.broadcast_status(status)
+            )
 
-                    @override
-                    def address_string(self) -> str:
-                        """Override to avoid slow reverse DNS lookups"""
-                        return str(self.client_address[0])
-
-                    @override
-                    def end_headers(self) -> None:
-                        # Add CORS headers
-                        _ = self.send_header('Access-Control-Allow-Origin', '*')
-                        _ = self.send_header('Cache-Control', 'no-cache')
-                        super().end_headers()
-
-                    @override
-                    def do_GET(self) -> None:
-                        """Handle GET requests with range request support for video streaming"""
-
-                        # Translate path to local filesystem path
-                        path = self.translate_path(self.path)
-
-                        # Check if it's a file (not a directory)
-                        if not os.path.isfile(path):
-                            # Let the parent class handle directory listings
-                            return super().do_GET()
-
-                        # Get file size
-                        try:
-                            file_size = os.path.getsize(path)
-                        except OSError:
-                            self.send_error(404, "File not found")
-                            return
-
-                        # Determine content type
-                        content_type = self.guess_type(path)
-
-                        # Check for Range header
-                        range_header = self.headers.get('Range')
-
-                        if range_header:
-                            # Parse range header (format: "bytes=start-end")
-                            try:
-                                range_match = range_header.replace('bytes=', '').split('-')
-                                start = int(range_match[0]) if range_match[0] else 0
-                                end = int(range_match[1]) if range_match[1] else file_size - 1
-
-                                # Validate range
-                                if start >= file_size or end >= file_size or start > end:
-                                    self.send_error(416, "Requested Range Not Satisfiable")
-                                    _ = self.send_header('Content-Range', f'bytes */{file_size}')
-                                    self.end_headers()
-                                    return
-
-                                # Send 206 Partial Content response
-                                self.send_response(206)
-                                _ = self.send_header('Content-Type', content_type)
-                                _ = self.send_header('Content-Range', f'bytes {start}-{end}/{file_size}')
-                                _ = self.send_header('Content-Length', str(end - start + 1))
-                                _ = self.send_header('Accept-Ranges', 'bytes')
-                                self.end_headers()
-
-                                # Send the requested byte range
-                                with open(path, 'rb') as f:
-                                    _ = f.seek(start)
-                                    bytes_to_send = end - start + 1
-                                    chunk_size = 8192
-                                    while bytes_to_send > 0:
-                                        chunk = f.read(min(chunk_size, bytes_to_send))
-                                        if not chunk:
-                                            break
-                                        _ = self.wfile.write(chunk)
-                                        bytes_to_send -= len(chunk)
-
-                            except (ValueError, IndexError):
-                                # Invalid range header, ignore and send full file
-                                self.send_response(200)
-                                _ = self.send_header('Content-Type', content_type)
-                                _ = self.send_header('Content-Length', str(file_size))
-                                _ = self.send_header('Accept-Ranges', 'bytes')
-                                self.end_headers()
-
-                                with open(path, 'rb') as f:
-                                    _ = self.wfile.write(f.read())
-                        else:
-                            # No range header, send full file with Accept-Ranges header
-                            self.send_response(200)
-                            _ = self.send_header('Content-Type', content_type)
-                            _ = self.send_header('Content-Length', str(file_size))
-                            _ = self.send_header('Accept-Ranges', 'bytes')
-                            self.end_headers()
-
-                            with open(path, 'rb') as f:
-                                chunk_size = 8192
-                                while True:
-                                    chunk = f.read(chunk_size)
-                                    if not chunk:
-                                        break
-                                    _ = self.wfile.write(chunk)
-
-                    @override
-                    def handle_one_request(self) -> None:
-                        """Handle a single HTTP request with better error handling"""
-                        import time
-                        start_time = time.time()
-                        try:
-                            super().handle_one_request()
-                            duration = time.time() - start_time
-                            if duration > 1.0:  # Log slow requests
-                                print(f"⚠️ Slow HTTP request took {duration:.2f}s")
-                        except (BrokenPipeError, ConnectionResetError):
-                            # Client disconnected - this is normal, don't spam logs
-                            pass
-                        except Exception as e:
-                            # Log other unexpected errors
-                            logger.error(f"Request handling error: {e}")
-
-                return MatchClipHandler
+            # Hook log broadcasting into the global GUILogHandler
+            gui_handler.ws_broadcaster = self.ws_broadcaster
 
             def run_server() -> None:
                 try:
+                    from web_api.handler import make_admin_handler
+
                     logger.info(f"Starting web server on port {self.config.web_port}")
                     logger.info(f"Serving directory: {clips_dir_str}")
                     logger.info(f"Access match clips at http://localhost:{self.config.web_port}")
+                    logger.info(f"Admin UI at http://localhost:{self.config.web_port}/admin")
 
-                    # Create handler class with the specific directory
-                    HandlerClass = make_handler(clips_dir_str)
+                    # Create handler class with API and admin UI support
+                    HandlerClass = make_admin_handler(clips_dir_str, self)
                     # Use ThreadingHTTPServer for better performance and bind to all interfaces
                     self.web_server = ThreadingHTTPServer(('0.0.0.0', self.config.web_port), HandlerClass)
                     # Prevent the server from hanging on to connections
@@ -710,14 +672,19 @@ class MatchBoxCore:
         except Exception as e:
             logger.error(f"Error unregistering mDNS service: {e}")
 
+    def ensure_web_server(self) -> None:
+        """Start the web server if it's not already running"""
+        if self.web_server is None:
+            _ = self.start_web_server()
+
     async def monitor_ftc_websocket(self) -> None:
         """Monitor FTC scoring system WebSocket for match events"""
         if not self.connect_to_obs():
             logger.error("Failed to connect to OBS. Exiting.")
             return
 
-        # Start web server
-        _ = self.start_web_server()
+        # Ensure web server is running (may already be started)
+        self.ensure_web_server()
 
         # Setup local video processing if OBS is recording
         _ = self.setup_local_video_processor()
@@ -727,10 +694,12 @@ class MatchBoxCore:
         logger.info(f"Field-scene mapping: {json.dumps(self.config.field_scene_mapping, indent=2)}")
 
         self.running = True
+        self._notify_status_change()
         try:
             async with websockets.client.connect(ftc_ws_url) as websocket:
                 self.ftc_websocket = websocket
                 logger.info("Connected to FTC scoring system WebSocket")
+                self._notify_status_change()
 
                 # Drain initial backlog of old events for 5 seconds
                 logger.info("⏳ Draining initial backlog of old events...")
@@ -800,14 +769,14 @@ class MatchBoxCore:
                             logger.error(f"Error processing message: {e}")
 
         except asyncio.CancelledError:
-            logger.error("WebSocket monitoring cancelled")
+            pass  # Normal cancellation from stop_matchbox
         except websockets.exceptions.ConnectionClosed:
             logger.error("Connection to FTC scoring system closed. Check server and event code.")
         except Exception as e:
             if self.running:
                 logger.error(f"WebSocket error: {e}")
         finally:
-            await self.shutdown()
+            await self.stop_monitoring()
 
     async def generate_match_clip_delayed(self, match_info: dict[str, object]) -> None:
         """Generate a match clip after waiting for the full match duration"""
@@ -911,6 +880,7 @@ class MatchBoxCore:
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MatchBox&trade; for FIRST&reg; Tech Challenge - Match Clips</title>
+    <link rel="icon" href="/favicon.ico">
     <style>
         :root    {{ color-scheme: dark; }}
         body     {{ font-family: sans-serif; margin: 0; background-color: #272727; color: #ddd; }}
@@ -1253,9 +1223,130 @@ class MatchBoxCore:
         except Exception as e:
             logger.error(f"Error updating web interface: {e}")
 
-    async def shutdown(self) -> None:
-        """Gracefully shutdown MatchBox"""
-        logger.info("Shutting down MatchBox...")
+    def start_sync(self) -> bool:
+        """Start the rsync background sync loop. Returns False if validation fails."""
+        if not self.config.rsync_host:
+            logger.error("Sync: rsync host is required")
+            return False
+        if not self.config.rsync_module:
+            logger.error("Sync: rsync module is required")
+            return False
+        if self.sync_running:
+            logger.warning("Sync: Already running")
+            return False
+
+        self.sync_running = True
+        self._sync_thread = threading.Thread(target=self._run_sync_loop, daemon=True)
+        self._sync_thread.start()
+        logger.info("Sync started")
+        self._notify_status_change()
+        return True
+
+    def stop_sync(self) -> None:
+        """Stop the rsync background sync loop"""
+        if not self.sync_running:
+            return
+        self.sync_running = False
+        logger.info("Stopping sync...")
+        self._notify_status_change()
+
+    def _run_sync_loop(self) -> None:
+        """Background thread that periodically runs rsync"""
+        while self.sync_running:
+            success = self._run_rsync()
+
+            if self.sync_running:
+                if success:
+                    logger.debug("Sync: Waiting for next interval")
+                else:
+                    logger.warning("Sync: Error occurred, will retry next interval")
+
+                # Sleep with periodic checks for shutdown
+                interval = self.config.rsync_interval_seconds or 60
+                for _ in range(interval):
+                    if not self.sync_running:
+                        break
+                    time.sleep(1)
+
+        self.sync_running = False
+        logger.info("Sync stopped")
+        self._notify_status_change()
+
+    def _run_rsync(self) -> bool:
+        """Run rsync to sync clips to remote server. Returns True if successful."""
+        host = self.config.rsync_host
+        module = self.config.rsync_module
+        username = self.config.rsync_username
+        password = self.config.rsync_password
+
+        # Sync entire clips directory (includes all event subdirectories)
+        source_path = Path(self.config.output_dir).absolute()
+        if not source_path.exists():
+            logger.info(f"Sync: Clips directory does not exist yet: {source_path}")
+            return True  # Not an error, just nothing to sync yet
+
+        # Build rsync URL: username@host::module
+        if username:
+            rsync_url = f"{username}@{host}::{module}"
+        else:
+            rsync_url = f"{host}::{module}"
+
+        # Build rsync command
+        if sys.platform == 'win32':
+            cwd = source_path.parent
+            source_arg = './' + source_path.name + '/'
+        else:
+            cwd = None
+            source_arg = str(source_path) + '/'
+
+        cmd = [
+            get_rsync_path(),
+            '-avz',
+            '--checksum',
+            source_arg,
+            rsync_url
+        ]
+
+        logger.info(f"Sync: Running rsync to {rsync_url}")
+
+        # Set up environment with password
+        env = os.environ.copy()
+        if password:
+            env['RSYNC_PASSWORD'] = password
+
+        try:
+            result = subprocess.run(
+                cmd,
+                env=env,
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                timeout=300  # 5 minute timeout
+            )
+
+            if result.returncode == 0:
+                lines = result.stdout.strip().split('\n') if result.stdout.strip() else []
+                logger.info(f"Sync: Completed successfully ({len(lines)} items processed)")
+                return True
+            else:
+                logger.error(f"Sync: rsync failed with code {result.returncode}")
+                if result.stderr:
+                    logger.error(f"Sync: {result.stderr.strip()}")
+                return False
+
+        except subprocess.TimeoutExpired:
+            logger.error("Sync: rsync timed out after 5 minutes")
+            return False
+        except FileNotFoundError:
+            logger.error("Sync: rsync command not found. Please install rsync.")
+            return False
+        except Exception as e:
+            logger.error(f"Sync: Error running rsync: {e}")
+            return False
+
+    async def stop_monitoring(self) -> None:
+        """Stop FTC/OBS monitoring but keep web server running. Idempotent."""
+        was_running = self.running
         self.running = False
 
         # Close FTC WebSocket
@@ -1266,14 +1357,27 @@ class MatchBoxCore:
         # Disconnect from OBS
         self.disconnect_from_obs()
 
-        # Stop web server and mDNS service
-        self.stop_web_server()
-        self.unregister_mdns_service()
-
         # Stop local video processor
         if self.local_video_processor:
             self.local_video_processor.stop_monitoring()
+            self.local_video_processor = None
             logger.info("Stopped local video processor")
+
+        if was_running:
+            self._notify_status_change()
+            logger.info("MatchBox monitoring stopped")
+
+    async def shutdown(self) -> None:
+        """Gracefully shutdown everything including web server"""
+        await self.stop_monitoring()
+
+        # Stop WebSocket server
+        if self.ws_broadcaster:
+            self.ws_broadcaster.stop()
+
+        # Stop web server and mDNS service
+        self.stop_web_server()
+        self.unregister_mdns_service()
 
         logger.info("MatchBox shutdown complete")
 
@@ -1339,6 +1443,12 @@ class MatchBoxGUI:
 
         self.create_widgets()
         self.load_config_to_gui(self.config)
+
+        # Create core instance and start web server immediately
+        self.matchbox = MatchBoxCore(self.config)
+        self.matchbox.ensure_web_server()
+        self.matchbox.register_status_callback(self._on_core_status_change)
+        logger.info(f"Admin UI available at http://localhost:{self.config.web_port}/admin")
 
     def create_widgets(self) -> None:
         """Create GUI widgets"""
@@ -1611,135 +1721,30 @@ class MatchBoxGUI:
             self.output_dir_var.set(directory)
 
     def start_sync(self) -> None:
-        """Start the rsync background thread"""
-        # Validate settings
-        if not self.rsync_host_var.get():
+        """Start the rsync background thread via core"""
+        self.load_gui_to_config()
+        assert self.matchbox is not None
+
+        if not self.config.rsync_host:
             _ = messagebox.showerror("Error", "rsync host is required")
             return
-        if not self.rsync_module_var.get():
+        if not self.config.rsync_module:
             _ = messagebox.showerror("Error", "rsync module is required")
             return
 
-        self.sync_running = True
-        self.sync_thread = threading.Thread(target=self.run_sync_loop, daemon=True)
-        self.sync_thread.start()
-
-        # Update UI
-        _ = self.start_sync_button.config(state=tk.DISABLED)
-        _ = self.stop_sync_button.config(state=tk.NORMAL)
-        _ = self.sync_status_var.set("Sync: Running")
-        logger.info("Sync started")
+        if self.matchbox.start_sync():
+            _ = self.start_sync_button.config(state=tk.DISABLED)
+            _ = self.stop_sync_button.config(state=tk.NORMAL)
+            _ = self.sync_status_var.set("Sync: Running")
 
     def stop_sync(self) -> None:
-        """Stop the rsync background thread"""
-        self.sync_running = False
-        logger.info("Stopping sync...")
+        """Stop the rsync background thread via core"""
+        assert self.matchbox is not None
+        self.matchbox.stop_sync()
 
-        # Update UI immediately
         _ = self.start_sync_button.config(state=tk.NORMAL)
         _ = self.stop_sync_button.config(state=tk.DISABLED)
         _ = self.sync_status_var.set("Sync: Stopped")
-
-    def run_sync_loop(self) -> None:
-        """Background thread that periodically runs rsync"""
-        while self.sync_running:
-            # Update status
-            _ = self.root.after(0, lambda: self.sync_status_var.set("Sync: Syncing..."))
-
-            success = self.run_rsync()
-
-            if self.sync_running:
-                if success:
-                    _ = self.root.after(0, lambda: self.sync_status_var.set("Sync: Running"))
-                else:
-                    _ = self.root.after(0, lambda: self.sync_status_var.set("Sync: Error (retrying)"))
-
-                # Sleep with periodic checks for shutdown
-                interval = self.rsync_interval_var.get() or 60
-                for _ in range(interval):
-                    if not self.sync_running:
-                        break
-                    time.sleep(1)
-
-        # Thread ending
-        _ = self.root.after(0, lambda: self.sync_status_var.set("Sync: Stopped"))
-
-    def run_rsync(self) -> bool:
-        """Run rsync to sync clips to remote server. Returns True if successful."""
-        host = self.rsync_host_var.get()
-        module = self.rsync_module_var.get()
-        username = self.rsync_username_var.get()
-        password = self.rsync_password_var.get()
-
-        # Sync entire clips directory (includes all event subdirectories)
-        source_path = Path(self.output_dir_var.get()).absolute()
-        if not source_path.exists():
-            logger.info(f"Sync: Clips directory does not exist yet: {source_path}")
-            return True  # Not an error, just nothing to sync yet
-
-        # Build rsync URL: username@host::module
-        if username:
-            rsync_url = f"{username}@{host}::{module}"
-        else:
-            rsync_url = f"{host}::{module}"
-
-        # Build rsync command
-        # On Windows with MSYS2 rsync, use relative path to avoid drive letter colon issues
-        if sys.platform == 'win32':
-            # Change to parent directory and sync using relative path
-            cwd = source_path.parent
-            source_arg = './' + source_path.name + '/'
-        else:
-            cwd = None
-            source_arg = str(source_path) + '/'
-
-        cmd = [
-            get_rsync_path(),
-            '-avz',
-            '--checksum',
-            source_arg,
-            rsync_url
-        ]
-
-        logger.info(f'cmd: {cmd}')
-
-        logger.info(f"Sync: Running rsync to {rsync_url}")
-
-        # Set up environment with password
-        env = os.environ.copy()
-        if password:
-            env['RSYNC_PASSWORD'] = password
-
-        try:
-            result = subprocess.run(
-                cmd,
-                env=env,
-                cwd=cwd,
-                capture_output=True,
-                text=True,
-                timeout=300  # 5 minute timeout
-            )
-
-            if result.returncode == 0:
-                # Count transferred files from output
-                lines = result.stdout.strip().split('\n') if result.stdout.strip() else []
-                logger.info(f"Sync: Completed successfully ({len(lines)} items processed)")
-                return True
-            else:
-                logger.error(f"Sync: rsync failed with code {result.returncode}")
-                if result.stderr:
-                    logger.error(f"Sync: {result.stderr.strip()}")
-                return False
-
-        except subprocess.TimeoutExpired:
-            logger.error("Sync: rsync timed out after 5 minutes")
-            return False
-        except FileNotFoundError:
-            logger.error("Sync: rsync command not found. Please install rsync.")
-            return False
-        except Exception as e:
-            logger.error(f"Sync: Error running rsync: {e}")
-            return False
 
     def load_gui_to_config(self):
         """Set configuration from GUI"""
@@ -1809,15 +1814,17 @@ class MatchBoxGUI:
             _ = messagebox.showerror("Error", "Event code is required")
             return
 
-        # Create temporary MatchBox instance just for OBS configuration
-        temp_matchbox = MatchBoxCore(self.config)
+        assert self.matchbox is not None
+        self.matchbox.config = self.config
 
-        if temp_matchbox.configure_obs_scenes():
+        if self.matchbox.configure_obs_scenes():
             logger.info("OBS scenes configured successfully!")
         else:
             logger.error("Failed to configure OBS scenes")
 
-        temp_matchbox.disconnect_from_obs()
+        # Only disconnect if not actively monitoring
+        if not self.matchbox.running:
+            self.matchbox.disconnect_from_obs()
 
     def start_matchbox(self) -> None:
         """Start MatchBox operation"""
@@ -1827,8 +1834,11 @@ class MatchBoxGUI:
             _ = messagebox.showerror("Error", "Event code is required")
             return
 
-        # Create MatchBox instance
-        self.matchbox = MatchBoxCore(self.config)
+        # Update existing core's config and reset clips dir
+        assert self.matchbox is not None
+        self.matchbox.config = self.config
+        self.matchbox.clips_dir = Path(self.config.output_dir).absolute() / self.config.event_code
+        self.matchbox.clips_dir.mkdir(exist_ok=True, parents=True)
 
         # Create new event loop
         self.async_loop = asyncio.new_event_loop()
@@ -1862,27 +1872,14 @@ class MatchBoxGUI:
             _ = self.root.after(0, self.update_ui_after_stop)
 
     def stop_matchbox(self) -> None:
-        """Stop MatchBox operation"""
+        """Stop MatchBox monitoring (web server stays running)"""
         if self.matchbox and self.matchbox.running:
             logger.info("Stopping MatchBox...")
+            self.matchbox.running = False
 
-            # Cancel monitoring task
+            # Cancel monitoring task - its finally block calls stop_monitoring()
             if self.monitor_task and not self.monitor_task.done() and self.async_loop:
                 _ = self.async_loop.call_soon_threadsafe(self.monitor_task.cancel)
-
-            # Schedule shutdown
-            if self.async_loop:
-                shutdown_task = asyncio.run_coroutine_threadsafe(
-                    self.matchbox.shutdown(), self.async_loop)
-
-                try:
-                    shutdown_task.result(timeout=5)
-                except concurrent.futures.TimeoutError:
-                    logger.error("Shutdown timed out")
-                except Exception as e:
-                    logger.error(f"Error during shutdown: {e}")
-
-            self.matchbox.running = False
 
     def update_ui_after_stop(self) -> None:
         """Update UI after MatchBox stops"""
@@ -1891,6 +1888,28 @@ class MatchBoxGUI:
         _ = self.configure_obs_button.config(state=tk.NORMAL)
         _ = self.status_var.set("Status: Not Running 🔴")
         logger.info("MatchBox stopped")
+
+    def _on_core_status_change(self, status: dict[str, object]) -> None:
+        """Called from any thread when core status changes - schedule GUI update"""
+        try:
+            self.root.after_idle(self._apply_core_status, status)
+        except Exception:
+            pass  # GUI might be destroyed
+
+    def _apply_core_status(self, status: dict[str, object]) -> None:
+        """Apply core status to GUI widgets (runs on main thread)"""
+        # Update running state
+        running = bool(status.get('running'))
+        _ = self.start_button.config(state=tk.DISABLED if running else tk.NORMAL)
+        _ = self.stop_button.config(state=tk.NORMAL if running else tk.DISABLED)
+        _ = self.configure_obs_button.config(state=tk.DISABLED if running else tk.NORMAL)
+        _ = self.status_var.set("Status: Running 🟢" if running else "Status: Not Running 🔴")
+
+        # Update sync state
+        sync_running = bool(status.get('sync_running'))
+        _ = self.start_sync_button.config(state=tk.DISABLED if sync_running else tk.NORMAL)
+        _ = self.stop_sync_button.config(state=tk.NORMAL if sync_running else tk.DISABLED)
+        _ = self.sync_status_var.set("Sync: Running" if sync_running else "Sync: Stopped")
 
     def log_to_gui(self, level: str, message: str) -> None:
         """Log message to GUI (called by GUILogHandler)"""
@@ -1901,10 +1920,24 @@ class MatchBoxGUI:
         _ = self.log_text.update_idletasks()  # Force GUI refresh to prevent text disappearing
 
     def on_closing(self) -> None:
-        """Handle window close"""
-        if self.matchbox and self.matchbox.running:
-            self.stop_matchbox()
-            time.sleep(1)
+        """Handle window close - full shutdown including web server"""
+        if self.matchbox:
+            # Stop monitoring if running
+            if self.matchbox.running:
+                self.matchbox.running = False
+                if self.monitor_task and not self.monitor_task.done() and self.async_loop:
+                    _ = self.async_loop.call_soon_threadsafe(self.monitor_task.cancel)
+                # Give the finally block a moment to clean up
+                time.sleep(0.5)
+
+            # Stop sync if running
+            self.matchbox.stop_sync()
+
+            # Always tear down web server and mDNS on app close
+            if self.matchbox.ws_broadcaster:
+                self.matchbox.ws_broadcaster.stop()
+            self.matchbox.stop_web_server()
+            self.matchbox.unregister_mdns_service()
         self.root.destroy()
 
 def get_config_path() -> str:
