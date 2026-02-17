@@ -215,7 +215,7 @@ class MatchBoxCore:
             overlay_url = (f"http://{self.config.scoring_host}:{self.config.scoring_port}/event/{self.config.event_code}/display/"
                           f"?type=audience&bindToField=all&scoringBarLocation=bottom&allianceOrientation=standard"
                           f"&liveScores=true&mute=false&muteRandomizationResults=false&fieldStyleTimer=false"
-                          f"&overlay=true&overlayColor=%23ff00ff&allianceSelectionStyle=classic&awardsStyle=overlay"
+                          f"&overlay=true&overlayColor=transparent&allianceSelectionStyle=classic&awardsStyle=overlay"
                           f"&dualDivisionRankingStyle=sideBySide&rankingsFontSize=larger&showMeetRankings=false"
                           f"&rankingsAllTeams=true")
             logger.info(f"Overlay URL: {overlay_url}")
@@ -260,44 +260,6 @@ class MatchBoxCore:
 
                     # Wait for source to be fully created
                     time.sleep(1.0)
-
-                    # Step 5: Add chroma key filter
-                    logger.info("Adding chroma key filter...")
-                    chroma_settings = {
-                        "key_color_type": "magenta",
-                        "key_color": 16711935,  # Magenta color value (0xFF00FF)
-                        "similarity": 110,
-                        "smoothness": 80,
-                        "key_color_spill_reduction": 100,
-                        "opacity": 1.0,
-                        "contrast": 0.0,
-                        "brightness": 0.0,
-                        "gamma": 0.0
-                    }
-
-                    try:
-                        # Try newer filter API first
-                        try:
-                            self.obs_ws.call(obsrequests.CreateSourceFilter(  # pyright: ignore[reportUnknownMemberType, reportAny]
-                                sourceName=shared_overlay_name,
-                                filterName="Chroma Key",
-                                filterKind="chroma_key_filter_v2",
-                                filterSettings=chroma_settings
-                            ))
-                            logger.info("✓ Added chroma key filter (v2)")
-                        except Exception as e1:
-                            logger.error(f"v2 filter failed ({e1}), trying v1...")
-                            # Fallback to older filter name
-                            self.obs_ws.call(obsrequests.CreateSourceFilter(  # pyright: ignore[reportUnknownMemberType, reportAny]
-                                sourceName=shared_overlay_name,
-                                filterName="Chroma Key",
-                                filterKind="chroma_key_filter",
-                                filterSettings=chroma_settings
-                            ))
-                            logger.info("✓ Added chroma key filter (v1)")
-
-                    except Exception as e:
-                        logger.error(f"✗ Could not add chroma key filter: {e}")
 
                 except Exception as e:
                     logger.error(f"✗ Error creating shared overlay source: {e}")
