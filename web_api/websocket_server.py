@@ -33,6 +33,11 @@ class WebSocketBroadcaster:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._server: websockets.server.WebSocketServer | None = None
 
+    @property
+    def loop(self) -> asyncio.AbstractEventLoop | None:
+        """The event loop this server runs on (available after start)."""
+        return self._loop
+
     def start(self) -> None:
         """Start the WebSocket server in a daemon thread"""
         self._thread = threading.Thread(target=self._run, daemon=True)

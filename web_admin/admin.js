@@ -1,13 +1,30 @@
 /** MatchBox Web Admin UI */
 
 // --- API Client ---
+function getRelayPrefix() {
+    // Detect relay-proxied access: URL ends with /{instance_id}/admin[/]
+    // e.g. /FTC/MatchBox/uswacmp/admin -> "/FTC/MatchBox/uswacmp"
+    const pathParts = window.location.pathname.split('/').filter(Boolean);
+    const adminIdx = pathParts.lastIndexOf('admin');
+    if (adminIdx >= 1) {
+        return '/' + pathParts.slice(0, adminIdx).join('/');
+    }
+    return null;
+}
+
+function getApiBase() {
+    const prefix = getRelayPrefix();
+    if (prefix) return prefix + '/api/';
+    return '/api/';
+}
+
 const API = {
     async get(path) {
-        const res = await fetch('/api/' + path);
+        const res = await fetch(getApiBase() + path);
         return res.json();
     },
     async post(path, body) {
-        const res = await fetch('/api/' + path, {
+        const res = await fetch(getApiBase() + path, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: body ? JSON.stringify(body) : undefined,
@@ -33,15 +50,17 @@ function switchTab(tabId) {
         el.classList.toggle('active', el.id === 'tab-' + tabId);
     });
 
-    // Lazy-load obs-web iframe on first visit to OBS tab
+    // Lazy-load obs-web on first visit to OBS tab
     if (tabId === 'obs' && !obsFrameLoaded) {
         obsFrameLoaded = true;
+        const wsBase = getWsBase();
+        const password = getVal('cfg-obs-password') || '';
+        const prefix = getRelayPrefix();
+        const obsWebPath = prefix ? `${prefix}/obs-web/` : '/obs-web/';
+        const obsUrl = `${obsWebPath}#${wsBase}/ws/obs` + (password ? `#${password}` : '');
+
         const frame = document.getElementById('obs-frame');
-        if (frame) {
-            const wsBase = getWsBase();
-            const password = getVal('cfg-obs-password') || '';
-            frame.src = `/obs-web/#${wsBase}/ws/obs` + (password ? `#${password}` : '');
-        }
+        if (frame) frame.src = obsUrl;
     }
 }
 
@@ -67,6 +86,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-save-config').addEventListener('click', saveConfig);
     document.getElementById('btn-start-sync').addEventListener('click', startSync);
     document.getElementById('btn-stop-sync').addEventListener('click', stopSync);
+    document.getElementById('btn-start-tunnel').addEventListener('click', startTunnel);
+    document.getElementById('btn-stop-tunnel').addEventListener('click', stopTunnel);
 
     // Auto-scroll toggle
     const logContainer = document.getElementById('log-container');
@@ -83,6 +104,15 @@ document.addEventListener('DOMContentLoaded', () => {
 // --- WebSocket connections ---
 function getWsBase() {
     const loc = window.location;
+    const prefix = getRelayPrefix();
+
+    if (prefix) {
+        // Accessed via relay - WS routes through relay at same origin
+        const wsProto = loc.protocol === 'https:' ? 'wss:' : 'ws:';
+        return `${wsProto}//${loc.host}${prefix}`;
+    }
+
+    // Direct access - WS server is on port+1
     const wsPort = parseInt(loc.port || (loc.protocol === 'https:' ? '443' : '80')) + 1;
     return `ws://${loc.hostname}:${wsPort}`;
 }
@@ -121,6 +151,7 @@ function updateStatusUI(status) {
     setDot('dot-running', status.running);
     setDot('dot-obs', status.obs_connected);
     setDot('dot-ftc', status.ftc_connected);
+    setDot('dot-tunnel', status.tunnel_connected);
 
     // Overview cards
     setText('status-running', status.running ? 'Running' : 'Stopped');
@@ -139,6 +170,12 @@ function updateStatusUI(status) {
     const stopSyncBtn = document.getElementById('btn-stop-sync');
     if (startSyncBtn) startSyncBtn.disabled = !!status.sync_running;
     if (stopSyncBtn) stopSyncBtn.disabled = !status.sync_running;
+
+    // Tunnel button states
+    const startTunnelBtn = document.getElementById('btn-start-tunnel');
+    const stopTunnelBtn = document.getElementById('btn-stop-tunnel');
+    if (startTunnelBtn) startTunnelBtn.disabled = !!status.tunnel_connected;
+    if (stopTunnelBtn) stopTunnelBtn.disabled = !status.tunnel_connected;
 }
 
 function setDot(id, on) {
@@ -215,6 +252,10 @@ function populateConfigForm(cfg) {
     setVal('cfg-rsync-username', cfg.rsync_username);
     setVal('cfg-rsync-password', cfg.rsync_password);
     setVal('cfg-rsync-interval', cfg.rsync_interval_seconds);
+
+    // Tunnel
+    setVal('cfg-tunnel-relay-url', cfg.tunnel_relay_url);
+    setVal('cfg-tunnel-token', cfg.tunnel_token);
 }
 
 function getConfigFromForm() {
@@ -241,6 +282,8 @@ function getConfigFromForm() {
         rsync_username: getVal('cfg-rsync-username'),
         rsync_password: getVal('cfg-rsync-password'),
         rsync_interval_seconds: parseInt(getVal('cfg-rsync-interval')) || 60,
+        tunnel_relay_url: getVal('cfg-tunnel-relay-url'),
+        tunnel_token: getVal('cfg-tunnel-token'),
     };
 }
 
@@ -309,6 +352,26 @@ async function stopSync() {
     try {
         const result = await API.post('sync/stop');
         if (!result.ok) alert(result.error || 'Could not stop sync');
+    } catch(e) {
+        alert('Error: ' + e.message);
+    }
+}
+
+async function startTunnel() {
+    try {
+        const cfg = getConfigFromForm();
+        await API.post('config', cfg);
+        const result = await API.post('tunnel/start');
+        if (!result.ok) alert(result.error || 'Could not start tunnel');
+    } catch(e) {
+        alert('Error: ' + e.message);
+    }
+}
+
+async function stopTunnel() {
+    try {
+        const result = await API.post('tunnel/stop');
+        if (!result.ok) alert(result.error || 'Could not stop tunnel');
     } catch(e) {
         alert('Error: ' + e.message);
     }

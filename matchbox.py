@@ -24,11 +24,14 @@ import logging
 from pathlib import Path
 import concurrent.futures
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Callable, cast, override
+from typing import TYPE_CHECKING, Any, Callable, cast, override
 from zeroconf import ServiceInfo, Zeroconf
 import os
 import subprocess
 from datetime import datetime, timedelta
+
+if TYPE_CHECKING:
+    from web_api.ws_tunnel_client import WSTunnelClient
 
 # Configure logging
 class GUILogHandler(logging.Handler):
@@ -125,6 +128,9 @@ class MatchBoxConfig:
         self.rsync_username: str = ''
         self.rsync_password: str = ''
         self.rsync_interval_seconds: int = 60
+        # Tunnel settings
+        self.tunnel_relay_url: str = ''
+        self.tunnel_token: str = ''
 
 class MatchBoxCore:
     """Core MatchBox functionality combining OBS switching and video autosplitting"""
@@ -163,6 +169,9 @@ class MatchBoxCore:
         # Sync state
         self.sync_running: bool = False
         self._sync_thread: threading.Thread | None = None
+
+        # WebSocket tunnel
+        self.tunnel_client: WSTunnelClient | None = None
 
         # Create output directory with event code subfolder
         self.clips_dir: Path = Path(self.config.output_dir).absolute() / self.config.event_code
@@ -205,6 +214,7 @@ class MatchBoxCore:
             'recording_info': recording_info,
             'event_code': self.config.event_code,
             'sync_running': self.sync_running,
+            'tunnel_connected': self.tunnel_client is not None and self.tunnel_client.is_connected(),
         }
 
     def get_config_dict(self) -> dict[str, object]:
@@ -1344,6 +1354,32 @@ class MatchBoxCore:
             logger.error(f"Sync: Error running rsync: {e}")
             return False
 
+    def start_tunnel(self) -> bool:
+        """Start WebSocket tunnel to relay server. Returns True if started."""
+        if self.tunnel_client and self.tunnel_client.is_connected():
+            logger.warning("Tunnel already running")
+            return False
+
+        from web_api.websocket_server import WebSocketBroadcaster
+        broadcaster = cast(WebSocketBroadcaster | None, self.ws_broadcaster)
+        if not broadcaster or not broadcaster.loop:
+            logger.error("Tunnel: Web server must be running first")
+            return False
+
+        from web_api.ws_tunnel_client import WSTunnelClient
+        self.tunnel_client = WSTunnelClient(self.config)
+        result = self.tunnel_client.start(broadcaster.loop)
+        if result:
+            self._notify_status_change()
+        return result
+
+    def stop_tunnel(self) -> None:
+        """Stop WebSocket tunnel."""
+        if self.tunnel_client:
+            self.tunnel_client.stop()
+            self.tunnel_client = None
+            self._notify_status_change()
+
     async def stop_monitoring(self) -> None:
         """Stop FTC/OBS monitoring but keep web server running. Idempotent."""
         was_running = self.running
@@ -1370,6 +1406,9 @@ class MatchBoxCore:
     async def shutdown(self) -> None:
         """Gracefully shutdown everything including web server"""
         await self.stop_monitoring()
+
+        # Stop WebSocket tunnel
+        self.stop_tunnel()
 
         # Stop WebSocket server
         if self.ws_broadcaster:

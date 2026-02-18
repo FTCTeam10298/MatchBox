@@ -2,14 +2,19 @@
 Extended HTTP handler with REST API routes and admin UI static file serving.
 """
 
+from __future__ import annotations
+
 import json
 import os
 import sys
 import logging
 from http.server import SimpleHTTPRequestHandler
 from pathlib import Path
-from typing import Any, override
+from typing import TYPE_CHECKING, Any, override
 from urllib.parse import urlparse
+
+if TYPE_CHECKING:
+    from matchbox import MatchBoxCore
 
 logger = logging.getLogger("matchbox")
 
@@ -23,7 +28,7 @@ def get_web_admin_dir() -> Path:
     return Path(__file__).parent.parent / 'web_admin'
 
 
-def make_admin_handler(clips_directory: str, core: Any) -> type[SimpleHTTPRequestHandler]:
+def make_admin_handler(clips_directory: str, core: MatchBoxCore) -> type[SimpleHTTPRequestHandler]:
     """Create an HTTP handler class with REST API and admin UI support.
 
     Args:
@@ -220,6 +225,24 @@ def make_admin_handler(clips_directory: str, core: Any) -> type[SimpleHTTPReques
                     self.send_json({'ok': False, 'error': str(e)}, 500)
                 return
 
+            if path == '/api/tunnel/start':
+                try:
+                    if self._core.start_tunnel():
+                        self.send_json({'ok': True})
+                    else:
+                        self.send_json({'ok': False, 'error': 'Check logs for details (missing host or already running)'}, 400)
+                except Exception as e:
+                    self.send_json({'ok': False, 'error': str(e)}, 500)
+                return
+
+            if path == '/api/tunnel/stop':
+                try:
+                    self._core.stop_tunnel()
+                    self.send_json({'ok': True})
+                except Exception as e:
+                    self.send_json({'ok': False, 'error': str(e)}, 500)
+                return
+
             self.send_json({'error': 'Not found'}, 404)
 
         @override
@@ -255,7 +278,7 @@ def make_admin_handler(clips_directory: str, core: Any) -> type[SimpleHTTPReques
                 self.send_header('Content-Length', str(file_size))
                 self.end_headers()
                 with open(file_path, 'rb') as f:
-                    self.wfile.write(f.read())
+                    _ = self.wfile.write(f.read())
             except Exception:
                 self.send_error(500, "Internal server error")
 
@@ -295,14 +318,14 @@ def make_admin_handler(clips_directory: str, core: Any) -> type[SimpleHTTPReques
                     self.end_headers()
 
                     with open(path, 'rb') as f:
-                        f.seek(start)
+                        _ = f.seek(start)
                         bytes_to_send = end - start + 1
                         chunk_size = 8192
                         while bytes_to_send > 0:
                             chunk = f.read(min(chunk_size, bytes_to_send))
                             if not chunk:
                                 break
-                            self.wfile.write(chunk)
+                            _ = self.wfile.write(chunk)
                             bytes_to_send -= len(chunk)
 
                 except (ValueError, IndexError):
@@ -312,7 +335,7 @@ def make_admin_handler(clips_directory: str, core: Any) -> type[SimpleHTTPReques
                     self.send_header('Accept-Ranges', 'bytes')
                     self.end_headers()
                     with open(path, 'rb') as f:
-                        self.wfile.write(f.read())
+                        _ = self.wfile.write(f.read())
             else:
                 self.send_response(200)
                 self.send_header('Content-Type', content_type)
@@ -325,7 +348,7 @@ def make_admin_handler(clips_directory: str, core: Any) -> type[SimpleHTTPReques
                         chunk = f.read(chunk_size)
                         if not chunk:
                             break
-                        self.wfile.write(chunk)
+                        _ = self.wfile.write(chunk)
 
         @override
         def handle_one_request(self) -> None:

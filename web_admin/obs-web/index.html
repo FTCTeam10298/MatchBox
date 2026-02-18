@@ -2,7 +2,18 @@
 <html lang="en" data-theme="light">
   <head>
     <meta charset="utf-8" />
-    <base href="/obs-web/" />
+    <script>
+      // Dynamic base href for relay support
+      (function() {
+        var path = location.pathname;
+        var idx = path.lastIndexOf('/obs-web');
+        if (idx !== -1) path = path.substring(0, idx) + '/obs-web/';
+        else path = '/obs-web/';
+        var base = document.createElement('base');
+        base.href = path;
+        document.head.appendChild(base);
+      })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="mobile-web-app-capable" content="yes" />
     <link rel="icon" href="favicon.png" />
@@ -16,7 +27,7 @@
 			<script>
 				{
 					__sveltekit_1uy6ck5 = {
-						base: "/obs-web"
+						base: (function() { var p = location.pathname; var i = p.lastIndexOf('/obs-web'); return i !== -1 ? p.substring(0, i) + '/obs-web' : '/obs-web'; })()
 					};
 
 					const element = document.currentScript.parentElement;
