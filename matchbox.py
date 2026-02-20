@@ -57,6 +57,8 @@ class GUILogHandler(logging.Handler):
         pass  # Required override - actual work done in handle()
 
 log_filename = f"matchbox_{datetime.now().strftime('%Y-%m-%d')}.log"
+if sys.platform == "darwin" and getattr(sys, 'frozen', False):
+    log_filename = str(Path.home() / "Desktop" / log_filename)
 gui_handler = GUILogHandler()
 logging.basicConfig(
     level=logging.INFO,
