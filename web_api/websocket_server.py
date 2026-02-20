@@ -3,17 +3,23 @@ WebSocket server for real-time log streaming, status updates, and OBS proxy.
 Runs in its own daemon thread with its own asyncio event loop.
 """
 
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
 import threading
 import time
 from collections import deque
-from typing import Any
+from typing import TYPE_CHECKING
 
 import websockets.client
 import websockets.server
 import websockets.exceptions
+from websockets.typing import Subprotocol
+
+if TYPE_CHECKING:
+    from matchbox import MatchBoxCore
 
 logger = logging.getLogger("matchbox")
 
@@ -23,9 +29,9 @@ LOG_BUFFER_SIZE = 500
 class WebSocketBroadcaster:
     """Manages WebSocket connections for logs, status, and OBS proxy."""
 
-    def __init__(self, port: int, core: Any) -> None:
-        self.port = port
-        self._core = core
+    def __init__(self, port: int, core: MatchBoxCore) -> None:
+        self.port: int = port
+        self._core: MatchBoxCore = core
         self._log_clients: set[websockets.server.WebSocketServerProtocol] = set()
         self._status_clients: set[websockets.server.WebSocketServerProtocol] = set()
         self._log_buffer: deque[dict[str, str]] = deque(maxlen=LOG_BUFFER_SIZE)
@@ -59,7 +65,7 @@ class WebSocketBroadcaster:
                 self._handler,
                 '0.0.0.0',
                 self.port,
-                subprotocols=['obswebsocket.json'],
+                subprotocols=[Subprotocol('obswebsocket.json')],
             )
             logger.info(f"WebSocket server listening on port {self.port}")
             await self._server.wait_closed()
@@ -122,10 +128,10 @@ class WebSocketBroadcaster:
 
         try:
             # Pass through the subprotocol requested by the client (obs-web uses obswebsocket.json)
-            subprotocols = list(websocket.request_headers.get_all('Sec-WebSocket-Protocol'))
+            subprotocols = [Subprotocol(p) for p in websocket.request_headers.get_all('Sec-WebSocket-Protocol')]
             async with websockets.client.connect(
                 obs_url,
-                subprotocols=subprotocols or ['obswebsocket.json'],
+                subprotocols=subprotocols or [Subprotocol('obswebsocket.json')],
             ) as obs_ws:
                 async def client_to_obs() -> None:
                     async for message in websocket:
@@ -135,7 +141,7 @@ class WebSocketBroadcaster:
                     async for message in obs_ws:
                         await websocket.send(message)
 
-                await asyncio.gather(client_to_obs(), obs_to_client())
+                _ = await asyncio.gather(client_to_obs(), obs_to_client())
         except websockets.exceptions.ConnectionClosed:
             pass
         except Exception as e:
@@ -155,14 +161,14 @@ class WebSocketBroadcaster:
         self._log_buffer.append(entry)
 
         if self._loop and self._log_clients:
-            asyncio.run_coroutine_threadsafe(
+            _ = asyncio.run_coroutine_threadsafe(
                 self._broadcast_log_async(entry), self._loop
             )
 
     async def _broadcast_log_async(self, entry: dict[str, str]) -> None:
         """Send log entry to all connected log clients"""
         msg = json.dumps(entry)
-        closed = set()
+        closed: set[websockets.server.WebSocketServerProtocol] = set()
         for ws in self._log_clients:
             try:
                 await ws.send(msg)
@@ -175,14 +181,14 @@ class WebSocketBroadcaster:
     def broadcast_status(self, status: dict[str, object]) -> None:
         """Broadcast status update to all connected status clients (thread-safe)"""
         if self._loop and self._status_clients:
-            asyncio.run_coroutine_threadsafe(
+            _ = asyncio.run_coroutine_threadsafe(
                 self._broadcast_status_async(status), self._loop
             )
 
     async def _broadcast_status_async(self, status: dict[str, object]) -> None:
         """Send status to all connected status clients"""
         msg = json.dumps(status, default=str)
-        closed = set()
+        closed: set[websockets.server.WebSocketServerProtocol] = set()
         for ws in self._status_clients:
             try:
                 await ws.send(msg)
@@ -197,4 +203,4 @@ class WebSocketBroadcaster:
         if self._server:
             self._server.close()
         if self._loop:
-            self._loop.call_soon_threadsafe(self._loop.stop)
+            _ = self._loop.call_soon_threadsafe(self._loop.stop)
