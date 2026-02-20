@@ -255,7 +255,9 @@ function populateConfigForm(cfg) {
 
     // Tunnel
     setVal('cfg-tunnel-relay-url', cfg.tunnel_relay_url);
-    setVal('cfg-tunnel-token', cfg.tunnel_token);
+    setVal('cfg-tunnel-password', cfg.tunnel_password);
+    const allowAdmin = document.getElementById('cfg-tunnel-allow-admin');
+    if (allowAdmin) allowAdmin.checked = cfg.tunnel_allow_admin !== false;
 }
 
 function getConfigFromForm() {
@@ -283,7 +285,8 @@ function getConfigFromForm() {
         rsync_password: getVal('cfg-rsync-password'),
         rsync_interval_seconds: parseInt(getVal('cfg-rsync-interval')) || 60,
         tunnel_relay_url: getVal('cfg-tunnel-relay-url'),
-        tunnel_token: getVal('cfg-tunnel-token'),
+        tunnel_password: getVal('cfg-tunnel-password'),
+        tunnel_allow_admin: document.getElementById('cfg-tunnel-allow-admin')?.checked ?? true,
     };
 }
 

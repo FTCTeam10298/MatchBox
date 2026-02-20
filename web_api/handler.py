@@ -4,19 +4,52 @@ Extended HTTP handler with REST API routes and admin UI static file serving.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import os
 import sys
 import logging
+import time
+from http import cookies
 from http.server import SimpleHTTPRequestHandler
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, override
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 
 if TYPE_CHECKING:
     from matchbox import MatchBoxCore
 
 logger = logging.getLogger("matchbox")
+
+_LOGIN_HTML = """<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MatchBox Login</title>
+    <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 400px; margin: 80px auto; padding: 0 20px; background: #1e1e1e; color: #ddd; }}
+        h1 {{ color: #fff; text-align: center; }}
+        form {{ background: #272727; padding: 24px; border-radius: 12px; border: 1px solid #444; }}
+        label {{ display: block; margin-bottom: 6px; font-weight: 600; }}
+        input[type=password] {{ width: 100%; padding: 10px; border: 1px solid #444; border-radius: 6px; background: #363636; color: #ddd; box-sizing: border-box; font-size: 16px; }}
+        input[type=password]:focus {{ outline: none; border-color: #4a9eff; }}
+        button {{ width: 100%; padding: 10px; margin-top: 16px; border: none; border-radius: 6px; background: #4a9eff; color: #fff; font-weight: 600; font-size: 16px; cursor: pointer; }}
+        button:hover {{ background: #6bb3ff; }}
+        .error {{ color: #f44336; margin-bottom: 12px; text-align: center; }}
+    </style>
+</head>
+<body>
+    <h1>MatchBox</h1>
+    <form method="POST" action="/admin/_auth">
+        {error}
+        <label for="password">Password</label>
+        <input type="password" name="password" id="password" autofocus>
+        <button type="submit">Log In</button>
+    </form>
+</body>
+</html>"""
 
 
 def get_web_admin_dir() -> Path:
@@ -79,6 +112,81 @@ def make_admin_handler(clips_directory: str, core: MatchBoxCore) -> type[SimpleH
             body = self.rfile.read(content_length)
             return json.loads(body)
 
+        def _get_session_secret(self) -> bytes:
+            """Derive a session signing secret from config."""
+            key = self._core.config.tunnel_password or 'matchbox'
+            return hmac.new(key.encode(), b'session-key', hashlib.sha256).digest()
+
+        def _make_session_cookie(self) -> str:
+            """Create an HMAC-signed session cookie value."""
+            instance_id = '_local'
+            expiry = int(time.time()) + 86400  # 24 hours
+            payload = f"{instance_id}:{expiry}"
+            sig = hmac.new(self._get_session_secret(), payload.encode(), hashlib.sha256).hexdigest()
+            return f"{instance_id}:{expiry}:{sig}"
+
+        def _check_auth(self) -> bool:
+            """Check if the request has a valid session cookie or is from localhost tunnel."""
+            # Trust requests from localhost (tunnel client proxies relay-authenticated requests)
+            if self.client_address[0] == '127.0.0.1':
+                return True
+            cookie_header = self.headers.get('Cookie', '')
+            if not cookie_header:
+                return False
+            # Parse cookies
+            c = cookies.SimpleCookie()
+            try:
+                c.load(cookie_header)
+            except cookies.CookieError:
+                return False
+            morsel = c.get('mb_session')
+            if not morsel:
+                return False
+            value = morsel.value
+            parts = value.split(':')
+            if len(parts) != 3:
+                return False
+            instance_id, expiry_str, sig = parts
+            try:
+                expiry = int(expiry_str)
+            except ValueError:
+                return False
+            if time.time() > expiry:
+                return False
+            expected = hmac.new(self._get_session_secret(), f"{instance_id}:{expiry_str}".encode(), hashlib.sha256).hexdigest()
+            return hmac.compare_digest(sig, expected)
+
+        def _check_password(self, password: str) -> bool:
+            """Check if password matches instance password or admin password."""
+            from matchbox import ADMIN_SALT, ADMIN_HASH
+            # Check instance password
+            if self._core.config.tunnel_password and password == self._core.config.tunnel_password:
+                return True
+            # Check admin password (if allowed)
+            if self._core.config.tunnel_allow_admin:
+                if hashlib.sha256(ADMIN_SALT + password.encode()).hexdigest() == ADMIN_HASH:
+                    return True
+            return False
+
+        def _send_login_page(self, error: str = '') -> None:
+            """Serve the login page."""
+            error_html = f'<p class="error">{error}</p>' if error else ''
+            body = _LOGIN_HTML.format(error=error_html).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/html')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            _ = self.wfile.write(body)
+
+        def _send_redirect(self, location: str, cookie: str | None = None) -> None:
+            """Send a 302 redirect, optionally setting a cookie."""
+            self.send_response(302)
+            self.send_header('Location', location)
+            if cookie:
+                self.send_header('Set-Cookie', f'mb_session={cookie}; Path=/; Max-Age=86400; HttpOnly; SameSite=Lax')
+            self.send_header('Content-Length', '0')
+            self.end_headers()
+
         @override
         def do_OPTIONS(self) -> None:
             """Handle CORS preflight"""
@@ -89,6 +197,17 @@ def make_admin_handler(clips_directory: str, core: MatchBoxCore) -> type[SimpleH
         def do_GET(self) -> None:
             parsed = urlparse(self.path)
             path = parsed.path
+
+            # Login page (unauthenticated)
+            if path == '/admin/_login':
+                self._send_login_page()
+                return
+
+            # Auth check for /admin/*, /api/*, and /obs-web/*
+            if path.startswith('/admin') or path.startswith('/api/') or path.startswith('/obs-web'):
+                if not self._check_auth():
+                    self._send_redirect('/admin/_login')
+                    return
 
             # API routes
             if path == '/api/status':
@@ -140,6 +259,25 @@ def make_admin_handler(clips_directory: str, core: MatchBoxCore) -> type[SimpleH
         def do_POST(self) -> None:
             parsed = urlparse(self.path)
             path = parsed.path
+
+            # Auth endpoint (unauthenticated)
+            if path == '/admin/_auth':
+                content_length = int(self.headers.get('Content-Length', 0))
+                body = self.rfile.read(content_length).decode('utf-8') if content_length else ''
+                params = parse_qs(body)
+                password = params.get('password', [''])[0]
+                if self._check_password(password):
+                    cookie = self._make_session_cookie()
+                    self._send_redirect('/admin/', cookie)
+                else:
+                    self._send_login_page('Invalid password')
+                return
+
+            # Auth check for /api/*
+            if path.startswith('/api/'):
+                if not self._check_auth():
+                    self.send_json({'error': 'Unauthorized'}, 401)
+                    return
 
             if path == '/api/start':
                 if self._core.running:

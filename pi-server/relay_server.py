@@ -7,7 +7,7 @@ MatchBox instances and proxies browser HTTP/WS requests through the tunnel.
 
 Usage:
     pip install aiohttp
-    python relay_server.py --token <shared-secret> [--port 8080] [--base-path /FTC/MatchBox]
+    python relay_server.py [--port 8080] [--base-path /FTC/MatchBox]
 
 Example nginx config:
     location /FTC/MatchBox/ {
@@ -22,8 +22,11 @@ Example nginx config:
 import argparse
 import asyncio
 import base64
+import hashlib
+import hmac
 import json
 import logging
+import os
 import time
 import uuid
 from typing import cast
@@ -36,6 +39,35 @@ logging.basicConfig(
 )
 logger = logging.getLogger("relay")
 
+_LOGIN_HTML = """<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MatchBox Login</title>
+    <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 400px; margin: 80px auto; padding: 0 20px; background: #1e1e1e; color: #ddd; }}
+        h1 {{ color: #fff; text-align: center; }}
+        form {{ background: #272727; padding: 24px; border-radius: 12px; border: 1px solid #444; }}
+        label {{ display: block; margin-bottom: 6px; font-weight: 600; }}
+        input[type=password] {{ width: 100%; padding: 10px; border: 1px solid #444; border-radius: 6px; background: #363636; color: #ddd; box-sizing: border-box; font-size: 16px; }}
+        input[type=password]:focus {{ outline: none; border-color: #4a9eff; }}
+        button {{ width: 100%; padding: 10px; margin-top: 16px; border: none; border-radius: 6px; background: #4a9eff; color: #fff; font-weight: 600; font-size: 16px; cursor: pointer; }}
+        button:hover {{ background: #6bb3ff; }}
+        .error {{ color: #f44336; margin-bottom: 12px; text-align: center; }}
+    </style>
+</head>
+<body>
+    <h1>MatchBox</h1>
+    <form method="POST" action="{action}">
+        {error}
+        <label for="password">Password</label>
+        <input type="password" name="password" id="password" autofocus>
+        <button type="submit">Log In</button>
+    </form>
+</body>
+</html>"""
+
 
 class TunnelInstance:
     """Represents a connected MatchBox instance."""
@@ -47,13 +79,18 @@ class TunnelInstance:
         self.connected_at: float = time.time()
         self.pending_http: dict[str, asyncio.Future[dict[str, object]]] = {}
         self.browser_ws_connections: dict[str, web.WebSocketResponse] = {}
+        # Auth fields from registration
+        self.password: str = ''
+        self.allow_admin: bool = True
+        self.admin_hash: str = ''
+        self.admin_salt: str = ''
 
 
 class RelayServer:
     """Manages tunnel connections and proxies requests."""
 
-    def __init__(self, token: str, base_path: str) -> None:
-        self.token: str = token
+    def __init__(self, base_path: str) -> None:
+        self._cookie_secret: bytes = os.urandom(32)
         self.base_path: str = base_path  # e.g. "/FTC/MatchBox" or ""
         self.instances: dict[str, TunnelInstance] = {}  # instance_id -> TunnelInstance
         self.id_by_event: dict[str, str] = {}  # event_code -> instance_id
@@ -64,8 +101,68 @@ class RelayServer:
             return self.instances.get(instance_id)
         return None
 
-    async def handle_dashboard(self, _request: web.Request) -> web.Response:
+    # --- Session cookie helpers ---
+
+    def _make_session_cookie(self, instance_id: str) -> str:
+        """Create an HMAC-signed session cookie value."""
+        expiry = int(time.time()) + 86400  # 24 hours
+        payload = f"{instance_id}:{expiry}"
+        sig = hmac.new(self._cookie_secret, payload.encode(), hashlib.sha256).hexdigest()
+        return f"{instance_id}:{expiry}:{sig}"
+
+    def _check_auth(self, request: web.Request, instance_id: str) -> bool:
+        """Check if the request has a valid session cookie for the given instance_id."""
+        cookie_value = request.cookies.get('mb_session', '')
+        if not cookie_value:
+            return False
+        parts = cookie_value.split(':')
+        if len(parts) != 3:
+            return False
+        cookie_instance, expiry_str, sig = parts
+        if cookie_instance != instance_id:
+            return False
+        try:
+            expiry = int(expiry_str)
+        except ValueError:
+            return False
+        if time.time() > expiry:
+            return False
+        expected = hmac.new(self._cookie_secret, f"{cookie_instance}:{expiry_str}".encode(), hashlib.sha256).hexdigest()
+        return hmac.compare_digest(sig, expected)
+
+    def _check_instance_password(self, instance: TunnelInstance, password: str) -> bool:
+        """Check password against instance password or admin hash."""
+        # Check instance password
+        if instance.password and password == instance.password:
+            return True
+        # Check admin password (if allowed)
+        if instance.allow_admin and instance.admin_hash and instance.admin_salt:
+            admin_salt = bytes.fromhex(instance.admin_salt)
+            if hashlib.sha256(admin_salt + password.encode()).hexdigest() == instance.admin_hash:
+                return True
+        return False
+
+    def _check_dashboard_password(self, password: str) -> bool:
+        """Check admin password against any connected instance's admin hash."""
+        for inst in self.instances.values():
+            if inst.admin_hash and inst.admin_salt:
+                admin_salt = bytes.fromhex(inst.admin_salt)
+                if hashlib.sha256(admin_salt + password.encode()).hexdigest() == inst.admin_hash:
+                    return True
+        return False
+
+    def _login_redirect(self, login_url: str) -> web.Response:
+        """Return a 302 redirect to the login page."""
+        return web.HTTPFound(login_url)
+
+    # --- Route handlers ---
+
+    async def handle_dashboard(self, request: web.Request) -> web.Response:
         """Serve dashboard listing connected instances."""
+        # Check auth for dashboard
+        if not self._check_auth(request, '_dashboard'):
+            return self._login_redirect(f'{self.base_path}/_login')
+
         instances_html = ""
         for inst in self.instances.values():
             uptime = int(time.time() - inst.connected_at)
@@ -90,13 +187,14 @@ class RelayServer:
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MatchBox Relay</title>
     <style>
-        body {{ font-family: -apple-system, sans-serif; max-width: 600px; margin: 40px auto; padding: 0 20px; background: #1a1a2e; color: #e0e0e0; }}
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 40px auto; padding: 0 20px; background: #1e1e1e; color: #ddd; }}
         h1 {{ color: #fff; }}
-        .instance {{ padding: 12px 16px; margin: 8px 0; background: #16213e; border-radius: 8px; }}
-        .instance a {{ color: #4fc3f7; text-decoration: none; font-weight: 600; }}
+        h2 {{ color: #ddd; }}
+        .instance {{ padding: 12px 16px; margin: 8px 0; background: #272727; border-radius: 8px; border: 1px solid #444; }}
+        .instance a {{ color: #4a9eff; text-decoration: none; font-weight: 600; }}
         .instance a:hover {{ text-decoration: underline; }}
-        .empty {{ color: #888; font-style: italic; }}
-        .refresh {{ color: #888; font-size: 0.85em; }}
+        .empty {{ color: #999; font-style: italic; }}
+        .refresh {{ color: #999; font-size: 0.85em; }}
     </style>
     <script>setTimeout(() => location.reload(), 10000);</script>
 </head>
@@ -107,6 +205,50 @@ class RelayServer:
     <p class="refresh">Auto-refreshes every 10 seconds.</p>
 </body>
 </html>"""
+        return web.Response(text=html, content_type='text/html')
+
+    async def handle_dashboard_login(self, _request: web.Request) -> web.Response:
+        """Serve login page for the dashboard."""
+        action = f'{self.base_path}/_auth'
+        html = _LOGIN_HTML.format(action=action, error='')
+        return web.Response(text=html, content_type='text/html')
+
+    async def handle_dashboard_auth(self, request: web.Request) -> web.Response:
+        """Handle dashboard login form submission."""
+        data = await request.post()
+        password = str(data.get('password', ''))
+        if self._check_dashboard_password(password):
+            cookie = self._make_session_cookie('_dashboard')
+            resp = web.HTTPFound(f'{self.base_path}/')
+            resp.set_cookie('mb_session', cookie, path='/', max_age=86400, httponly=True, samesite='Lax')
+            return resp
+        action = f'{self.base_path}/_auth'
+        html = _LOGIN_HTML.format(action=action, error='<p class="error">Invalid password</p>')
+        return web.Response(text=html, content_type='text/html')
+
+    async def handle_instance_login(self, request: web.Request) -> web.Response:
+        """Serve login page for an instance."""
+        instance_id = request.match_info['instance_id']
+        action = f'{self.base_path}/{instance_id}/_auth'
+        html = _LOGIN_HTML.format(action=action, error='')
+        return web.Response(text=html, content_type='text/html')
+
+    async def handle_instance_auth(self, request: web.Request) -> web.Response:
+        """Handle instance login form submission."""
+        instance_id = request.match_info['instance_id']
+        instance = self.instances.get(instance_id)
+
+        data = await request.post()
+        password = str(data.get('password', ''))
+
+        if instance and self._check_instance_password(instance, password):
+            cookie = self._make_session_cookie(instance_id)
+            resp = web.HTTPFound(f'{self.base_path}/{instance_id}/admin')
+            resp.set_cookie('mb_session', cookie, path='/', max_age=86400, httponly=True, samesite='Lax')
+            return resp
+
+        action = f'{self.base_path}/{instance_id}/_auth'
+        html = _LOGIN_HTML.format(action=action, error='<p class="error">Invalid password</p>')
         return web.Response(text=html, content_type='text/html')
 
     async def handle_tunnel_ws(self, request: web.Request) -> web.WebSocketResponse:
@@ -127,12 +269,6 @@ class RelayServer:
             if reg_data.get('type') != 'register':
                 _ = await ws.send_json({'type': 'error', 'message': 'First message must be register'})
                 _ = await ws.close()
-                return ws
-
-            # Validate token
-            if reg_data.get('token') != self.token:
-                _ = await ws.send_json({'type': 'error', 'message': 'Invalid token'})
-                _ = await ws.close(code=4001, message=b"Invalid token")
                 return ws
 
             event_code: str = reg_data.get('event_code', 'default')
@@ -162,6 +298,12 @@ class RelayServer:
                     pass
 
             instance = TunnelInstance(ws, event_code, instance_id)
+            # Store auth fields from registration
+            instance.password = reg_data.get('password', '')
+            instance.allow_admin = reg_data.get('allow_admin', 'true') not in ('false', False)
+            instance.admin_hash = reg_data.get('admin_hash', '')
+            instance.admin_salt = reg_data.get('admin_salt', '')
+
             self.instances[instance_id] = instance
             self.id_by_event[event_code] = instance_id
 
@@ -256,6 +398,10 @@ class RelayServer:
 
         if not instance:
             return web.Response(text="Instance not connected", status=502)
+
+        # Auth check - redirect to login if not authenticated
+        if not self._check_auth(request, instance_id):
+            return self._login_redirect(f'{self.base_path}/{instance_id}/_login')
 
         # Check if this is a WebSocket upgrade
         if request.headers.get('Upgrade', '').lower() == 'websocket':
@@ -378,17 +524,22 @@ class RelayServer:
 def main() -> None:
     parser = argparse.ArgumentParser(description="MatchBox Relay Server")
     _ = parser.add_argument('--port', type=int, default=8080, help='Port to listen on (default: 8080)')
-    _ = parser.add_argument('--token', required=True, help='Shared authentication token')
     _ = parser.add_argument('--base-path', default='', help='URL base path (e.g. /FTC/MatchBox)')
     args = parser.parse_args()
     port = cast(int, args.port)
-    token = cast(str, args.token)
     base_path = cast(str, args.base_path).rstrip('/')
 
-    relay = RelayServer(token=token, base_path=base_path)
+    relay = RelayServer(base_path=base_path)
 
     app = web.Application()
     prefix = base_path if base_path else ''
+    # Dashboard auth routes
+    _ = app.router.add_get(prefix + '/_login', relay.handle_dashboard_login)
+    _ = app.router.add_post(prefix + '/_auth', relay.handle_dashboard_auth)
+    # Instance auth routes (must come before catch-all)
+    _ = app.router.add_get(prefix + '/{instance_id}/_login', relay.handle_instance_login)
+    _ = app.router.add_post(prefix + '/{instance_id}/_auth', relay.handle_instance_auth)
+    # Existing routes
     _ = app.router.add_get(prefix + '/', relay.handle_dashboard)
     _ = app.router.add_get(prefix + '/tunnel', relay.handle_tunnel_ws)
     _ = app.router.add_route('*', prefix + '/{instance_id}/{path:.*}', relay.handle_proxy)

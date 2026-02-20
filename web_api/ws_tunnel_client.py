@@ -102,10 +102,14 @@ class WSTunnelClient:
                     self._ws = ws
 
                     # Send registration
+                    from matchbox import ADMIN_SALT, ADMIN_HASH
                     await ws.send(json.dumps({
                         'type': 'register',
-                        'token': self.config.tunnel_token,
                         'event_code': self.config.event_code or 'default',
+                        'password': self.config.tunnel_password,
+                        'allow_admin': self.config.tunnel_allow_admin,
+                        'admin_hash': ADMIN_HASH,
+                        'admin_salt': ADMIN_SALT.hex(),
                     }))
 
                     # Wait for registration response

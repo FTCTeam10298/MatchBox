@@ -81,6 +81,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger("matchbox")
 
+# Admin password authentication
+# To generate a new hash, run: python3 generate_admin_hash.py
+ADMIN_SALT = b'\x13\xc7\x90+;<1$;\xdb,\x10\xd1\x16z\xb4'
+ADMIN_HASH = 'b2dccbe9889768f2f27b6715701a56a05cede5ca6a7d04494273a5a803d9bbcb'
+
 # Import after logging is configured so it uses our config
 from local_video_processor import LocalVideoProcessor
 
@@ -130,7 +135,8 @@ class MatchBoxConfig:
         self.rsync_interval_seconds: int = 60
         # Tunnel settings
         self.tunnel_relay_url: str = ''
-        self.tunnel_token: str = ''
+        self.tunnel_password: str = ''
+        self.tunnel_allow_admin: bool = True
 
 class MatchBoxCore:
     """Core MatchBox functionality combining OBS switching and video autosplitting"""
