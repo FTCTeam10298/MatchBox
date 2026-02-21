@@ -14,7 +14,9 @@ import time
 from http import cookies
 from http.server import SimpleHTTPRequestHandler
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, override
+import socket
+from socketserver import BaseServer
+from typing import TYPE_CHECKING, cast, override
 from urllib.parse import urlparse, parse_qs
 
 if TYPE_CHECKING:
@@ -56,7 +58,7 @@ def get_web_admin_dir() -> Path:
     """Get path to web_admin static files directory"""
     if getattr(sys, 'frozen', False):
         meipass = getattr(sys, '_MEIPASS', None)
-        if meipass:
+        if isinstance(meipass, str):
             return Path(meipass) / 'web_admin'
     return Path(__file__).parent.parent / 'web_admin'
 
@@ -70,15 +72,16 @@ def make_admin_handler(clips_directory: str, core: MatchBoxCore) -> type[SimpleH
     """
 
     class AdminHandler(SimpleHTTPRequestHandler):
-        _core = core
-        _clips_dir = clips_directory
-        _web_admin_dir = str(get_web_admin_dir())
+        _core: MatchBoxCore = core
+        _clips_dir: str = clips_directory
+        _web_admin_dir: str = str(get_web_admin_dir())
+        path: str
 
-        def __init__(self, *args: Any, **kwargs: Any) -> None:
-            super().__init__(*args, directory=self._clips_dir, **kwargs)
+        def __init__(self, request: socket.socket, client_address: tuple[str, int], server: BaseServer) -> None:
+            super().__init__(request, client_address, server, directory=self._clips_dir)
 
         @override
-        def log_message(self, format: str, *args: Any) -> None:
+        def log_message(self, format: str, *args: object) -> None:
             message = format % args
             if "Broken pipe" not in message and "Connection reset" not in message:
                 print(f"HTTP: {message}")
@@ -102,15 +105,15 @@ def make_admin_handler(clips_directory: str, core: MatchBoxCore) -> type[SimpleH
             self.send_header('Content-Type', 'application/json')
             self.send_header('Content-Length', str(len(body)))
             self.end_headers()
-            self.wfile.write(body)
+            _ = self.wfile.write(body)
 
-        def read_body(self) -> dict[str, Any]:
+        def read_body(self) -> dict[str, object]:
             """Read and parse JSON request body"""
             content_length = int(self.headers.get('Content-Length', 0))
             if content_length == 0:
                 return {}
             body = self.rfile.read(content_length)
-            return json.loads(body)
+            return cast(dict[str, object], json.loads(body))
 
         def _get_session_secret(self) -> bytes:
             """Derive a session signing secret from config."""
@@ -187,7 +190,6 @@ def make_admin_handler(clips_directory: str, core: MatchBoxCore) -> type[SimpleH
             self.send_header('Content-Length', '0')
             self.end_headers()
 
-        @override
         def do_OPTIONS(self) -> None:
             """Handle CORS preflight"""
             self.send_response(204)
@@ -219,8 +221,8 @@ def make_admin_handler(clips_directory: str, core: MatchBoxCore) -> type[SimpleH
                 return
 
             if path == '/api/clips':
-                clips = []
-                for f in self._core._scan_video_files():
+                clips: list[dict[str, object]] = []
+                for f in self._core.scan_video_files():
                     clips.append({
                         'name': f.name,
                         'size': f.stat().st_size,
@@ -255,7 +257,6 @@ def make_admin_handler(clips_directory: str, core: MatchBoxCore) -> type[SimpleH
             # Fall through to clip-serving with range request support
             self._serve_clip_file()
 
-        @override
         def do_POST(self) -> None:
             parsed = urlparse(self.path)
             path = parsed.path
@@ -309,7 +310,7 @@ def make_admin_handler(clips_directory: str, core: MatchBoxCore) -> type[SimpleH
                     # Just set running=False; the monitor loop will exit
                     # and its finally block handles cleanup via stop_monitoring()
                     self._core.running = False
-                    self._core._notify_status_change()
+                    self._core.notify_status_change()
                     self.send_json({'ok': True})
                 else:
                     self.send_json({'ok': False, 'error': 'Not running'}, 400)
@@ -383,7 +384,6 @@ def make_admin_handler(clips_directory: str, core: MatchBoxCore) -> type[SimpleH
 
             self.send_json({'error': 'Not found'}, 404)
 
-        @override
         def do_PUT(self) -> None:
             # Treat PUT same as POST for API
             self.do_POST()

@@ -187,7 +187,7 @@ class MatchBoxCore:
         """Register a callback to be notified of status changes"""
         self._status_callbacks.append(callback)
 
-    def _notify_status_change(self) -> None:
+    def notify_status_change(self) -> None:
         """Notify all registered callbacks of a status change"""
         status = self.get_status()
         for cb in self._status_callbacks:
@@ -200,7 +200,7 @@ class MatchBoxCore:
         """Get current status as a dict"""
         clips_count = 0
         try:
-            clips_count = len(self._scan_video_files())
+            clips_count = len(self.scan_video_files())
         except Exception:
             pass
 
@@ -245,7 +245,7 @@ class MatchBoxCore:
             self.obs_ws = obswebsocket.obsws(self.config.obs_host, self.config.obs_port, self.config.obs_password)
             self.obs_ws.connect()  # pyright: ignore[reportUnknownMemberType]
             logger.info("Connected to OBS WebSocket server")
-            self._notify_status_change()
+            self.notify_status_change()
             return True
         except Exception as e:
             logger.error(f"Error connecting to OBS: {e}")
@@ -258,7 +258,7 @@ class MatchBoxCore:
                 self.obs_ws.disconnect()  # pyright: ignore[reportUnknownMemberType]
                 self.obs_ws = None
                 logger.info("Disconnected from OBS WebSocket server")
-                self._notify_status_change()
+                self.notify_status_change()
             except Exception as e:
                 logger.error(f"Error disconnecting from OBS: {e}")
 
@@ -527,7 +527,7 @@ class MatchBoxCore:
             response = self.obs_ws.call(obsrequests.SetCurrentProgramScene(sceneName=scene_name))  # pyright: ignore[reportUnknownMemberType, reportAny, reportUnknownVariableType]
             if response.status:  # pyright: ignore[reportUnknownMemberType]
                 logger.info(f"Switched to scene: {scene_name} for Field {field_number}")
-                self._notify_status_change()
+                self.notify_status_change()
                 return True
             else:
                 logger.error(f"Failed to switch scene: {response.error}")  # pyright: ignore[reportUnknownMemberType]
@@ -710,12 +710,12 @@ class MatchBoxCore:
         logger.info(f"Field-scene mapping: {json.dumps(self.config.field_scene_mapping, indent=2)}")
 
         self.running = True
-        self._notify_status_change()
+        self.notify_status_change()
         try:
             async with websockets.client.connect(ftc_ws_url) as websocket:
                 self.ftc_websocket = websocket
                 logger.info("Connected to FTC scoring system WebSocket")
-                self._notify_status_change()
+                self.notify_status_change()
 
                 # Drain initial backlog of old events for 5 seconds
                 logger.info("⏳ Draining initial backlog of old events...")
@@ -853,7 +853,7 @@ class MatchBoxCore:
             import traceback
             logger.error(f"❌ Full traceback: {traceback.format_exc()}")
 
-    def _scan_video_files(self) -> list[Path]:
+    def scan_video_files(self) -> list[Path]:
         """Scan for video files in clips directory"""
         video_extensions = ('.mp4', '.avi', '.mov', '.mkv', '.wmv', '.flv', '.webm')
         video_files: list[Path] = []
@@ -1219,7 +1219,7 @@ class MatchBoxCore:
 
     def create_initial_web_interface(self) -> None:
         """Create initial web interface with existing files (sync version)"""
-        video_files = self._scan_video_files()
+        video_files = self.scan_video_files()
         html_content = self._generate_html_content(video_files)
 
         index_path = self.clips_dir / "index.html"
@@ -1229,7 +1229,7 @@ class MatchBoxCore:
     async def update_web_interface_clips(self) -> None:
         """Update web interface to show available clips"""
         try:
-            video_files = self._scan_video_files()
+            video_files = self.scan_video_files()
             html_content = self._generate_html_content(video_files)
 
             index_path = self.clips_dir / "index.html"
@@ -1255,7 +1255,7 @@ class MatchBoxCore:
         self._sync_thread = threading.Thread(target=self._run_sync_loop, daemon=True)
         self._sync_thread.start()
         logger.info("Sync started")
-        self._notify_status_change()
+        self.notify_status_change()
         return True
 
     def stop_sync(self) -> None:
@@ -1264,7 +1264,7 @@ class MatchBoxCore:
             return
         self.sync_running = False
         logger.info("Stopping sync...")
-        self._notify_status_change()
+        self.notify_status_change()
 
     def _run_sync_loop(self) -> None:
         """Background thread that periodically runs rsync"""
@@ -1286,7 +1286,7 @@ class MatchBoxCore:
 
         self.sync_running = False
         logger.info("Sync stopped")
-        self._notify_status_change()
+        self.notify_status_change()
 
     def _run_rsync(self) -> bool:
         """Run rsync to sync clips to remote server. Returns True if successful."""
@@ -1375,7 +1375,7 @@ class MatchBoxCore:
         self.tunnel_client = WSTunnelClient(self.config)
         result = self.tunnel_client.start(broadcaster.loop)
         if result:
-            self._notify_status_change()
+            self.notify_status_change()
         return result
 
     def stop_tunnel(self) -> None:
@@ -1383,7 +1383,7 @@ class MatchBoxCore:
         if self.tunnel_client:
             self.tunnel_client.stop()
             self.tunnel_client = None
-            self._notify_status_change()
+            self.notify_status_change()
 
     async def stop_monitoring(self) -> None:
         """Stop FTC/OBS monitoring but keep web server running. Idempotent."""
@@ -1405,7 +1405,7 @@ class MatchBoxCore:
             logger.info("Stopped local video processor")
 
         if was_running:
-            self._notify_status_change()
+            self.notify_status_change()
             logger.info("MatchBox monitoring stopped")
 
     async def shutdown(self) -> None:
