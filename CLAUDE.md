@@ -53,7 +53,18 @@ The project uses **basedpyright** in strict mode. When writing or modifying code
 
 **matchbox-cli.py** - Command-line interface alternative to the GUI
 
+**matchbox-sync.py** - Standalone rsync daemon for syncing match clips to a remote server
+
 **local_video_processor.py** - Video clipping engine that uses ffmpeg subprocess calls to extract match segments from OBS recordings
+
+**web_api/** - Web server components:
+- `handler.py` - HTTP request handler with REST API routes, admin UI static file serving, and session-cookie authentication
+- `websocket_server.py` - WebSocket server for real-time log streaming, status updates, and OBS WebSocket proxy
+- `ws_tunnel_client.py` - WebSocket tunnel client that connects to a relay server for remote access
+
+**web_admin/** - Static HTML/CSS/JS for the browser-based admin dashboard (served by `handler.py` at `/admin/`)
+
+**pi-server/relay_server.py** - Relay server (designed to run on a VPS/Pi) that bridges remote browser clients to MatchBox instances via WebSocket tunneling
 
 ### Data Flow
 
@@ -76,7 +87,15 @@ FTC Scoring WebSocket → MatchBoxCore → OBS Scene Switch
 - Main thread: Tkinter GUI event loop
 - Background thread: asyncio event loop for WebSocket monitoring
 - Web server: ThreadingHTTPServer with multi-threaded request handling
+- WebSocket server: Separate daemon thread with its own asyncio event loop
 - mDNS: Separate daemon thread for Zeroconf registration
+
+### Web Admin & Remote Access
+
+- **Local access**: Admin UI served at `/admin/`, API at `/api/`, clip downloads at `/`
+- **Remote access**: WS tunnel client connects to relay server; relay proxies HTTP/WS requests back through the tunnel
+- **Authentication**: HMAC-signed session cookies (`mb_session`), 24h expiry. Two-tier: instance password (per-instance) and admin password (hardcoded hash via `ADMIN_SALT`/`ADMIN_HASH`). Localhost requests bypass auth (for tunnel-proxied requests).
+- **WebSocket paths**: `/ws/logs` (log streaming), `/ws/status` (status updates), `/ws/obs` (OBS WebSocket proxy)
 
 ### Key Technical Details
 
@@ -84,6 +103,7 @@ FTC Scoring WebSocket → MatchBoxCore → OBS Scene Switch
 - Custom HTTP handler implements Range requests for progressive video playback
 - Configuration stored as JSON (`matchbox_config.json`) with CLI args taking priority
 - Version derived from git tags via setuptools-scm
+- Admin password hash generated via `generate_admin_hash.py`
 
 ### Build System
 
