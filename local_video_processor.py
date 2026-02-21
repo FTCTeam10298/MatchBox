@@ -251,7 +251,7 @@ class LocalVideoProcessor:
             # Lower process priority to avoid interfering with OBS stream
             if process.pid:
                 try:
-                    import psutil
+                    import psutil  # pyright: ignore[reportMissingModuleSource]
                     p = psutil.Process(process.pid)
                     if sys.platform == 'win32':
                         _ = p.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
