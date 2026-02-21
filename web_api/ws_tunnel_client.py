@@ -12,10 +12,11 @@ import base64
 import http.client
 import json
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, cast
 
 import websockets.client
 import websockets.exceptions
+from websockets.typing import Subprotocol
 
 if TYPE_CHECKING:
     from matchbox import MatchBoxConfig
@@ -27,13 +28,13 @@ class WSTunnelClient:
     """Connects to a relay server and proxies requests back to local MatchBox."""
 
     def __init__(self, config: MatchBoxConfig) -> None:
-        self.config = config
-        self._ws: Any = None
+        self.config: MatchBoxConfig = config
+        self._ws: websockets.client.WebSocketClientProtocol | None = None
         self._connected: bool = False
         self._running: bool = False
         self._loop: asyncio.AbstractEventLoop | None = None
         self._task: asyncio.Task[None] | None = None
-        self._local_ws_connections: dict[str, Any] = {}  # id -> websocket
+        self._local_ws_connections: dict[str, websockets.client.WebSocketClientProtocol] = {}
 
     def is_connected(self) -> bool:
         return self._connected
@@ -47,7 +48,7 @@ class WSTunnelClient:
 
         self._loop = loop
         self._running = True
-        asyncio.run_coroutine_threadsafe(self._connect_loop(), loop)
+        _ = asyncio.run_coroutine_threadsafe(self._connect_loop(), loop)
         logger.info(f"Tunnel: Connecting to relay {url}")
         return True
 
@@ -60,7 +61,7 @@ class WSTunnelClient:
         for ws in list(self._local_ws_connections.values()):
             try:
                 if self._loop:
-                    asyncio.run_coroutine_threadsafe(ws.close(), self._loop)
+                    _ = asyncio.run_coroutine_threadsafe(ws.close(), self._loop)
             except Exception:
                 pass
         self._local_ws_connections.clear()
@@ -68,7 +69,7 @@ class WSTunnelClient:
         # Close tunnel WS
         if self._ws and self._loop:
             try:
-                asyncio.run_coroutine_threadsafe(self._ws.close(), self._loop)
+                _ = asyncio.run_coroutine_threadsafe(self._ws.close(), self._loop)
             except Exception:
                 pass
             self._ws = None
@@ -113,14 +114,14 @@ class WSTunnelClient:
                     }))
 
                     # Wait for registration response
-                    resp = json.loads(await ws.recv())
+                    resp = cast(dict[str, object], json.loads(str(await ws.recv())))
                     if resp.get('type') == 'error':
                         logger.error(f"Tunnel: Registration failed: {resp.get('message')}")
                         self._running = False
                         return
 
                     if resp.get('type') == 'registered':
-                        instance_id = resp.get('instance_id', '')
+                        instance_id = str(resp.get('instance_id', ''))
                         self._connected = True
                         retry_delay = 5
                         logger.info(f"Tunnel: Connected (instance: {instance_id})")
@@ -139,13 +140,13 @@ class WSTunnelClient:
                         if not self._running:
                             break
                         try:
-                            msg = json.loads(raw)
-                            msg_type = msg.get('type', '')
+                            msg = cast(dict[str, object], json.loads(str(raw)))
+                            msg_type = str(msg.get('type', ''))
 
                             if msg_type == 'http_request':
-                                asyncio.ensure_future(self._handle_http_request(msg))
+                                _ = asyncio.ensure_future(self._handle_http_request(msg))
                             elif msg_type == 'ws_open':
-                                asyncio.ensure_future(self._handle_ws_open(msg))
+                                _ = asyncio.ensure_future(self._handle_ws_open(msg))
                             elif msg_type == 'ws_data':
                                 await self._handle_ws_data(msg)
                             elif msg_type == 'ws_close':
@@ -177,13 +178,13 @@ class WSTunnelClient:
                 await asyncio.sleep(retry_delay)
                 retry_delay = min(retry_delay * 2, 60)
 
-    async def _handle_http_request(self, msg: dict[str, Any]) -> None:
+    async def _handle_http_request(self, msg: dict[str, object]) -> None:
         """Proxy an HTTP request to the local web server."""
-        req_id = msg['id']
-        method = msg.get('method', 'GET')
-        path = msg.get('path', '/')
-        headers = msg.get('headers', {})
-        body_b64 = msg.get('body', '')
+        req_id = str(msg['id'])
+        method = str(msg.get('method', 'GET'))
+        path = str(msg.get('path', '/'))
+        headers = cast(dict[str, str], msg.get('headers', {}))
+        body_b64 = str(msg.get('body', ''))
 
         try:
             body = base64.b64decode(body_b64) if body_b64 else None
@@ -232,11 +233,11 @@ class WSTunnelClient:
         finally:
             conn.close()
 
-    async def _handle_ws_open(self, msg: dict[str, Any]) -> None:
+    async def _handle_ws_open(self, msg: dict[str, object]) -> None:
         """Open a local WebSocket connection for a proxied browser WS."""
-        ws_id = msg['id']
-        path = msg.get('path', '/ws/status')
-        subprotocols = msg.get('subprotocols', [])
+        ws_id = str(msg['id'])
+        path = str(msg.get('path', '/ws/status'))
+        subprotocols = cast(list[str], msg.get('subprotocols', []))
 
         ws_port = self.config.web_port + 1
         local_url = f"ws://127.0.0.1:{ws_port}{path}"
@@ -246,7 +247,7 @@ class WSTunnelClient:
         try:
             local_ws = await websockets.client.connect(
                 local_url,
-                subprotocols=subprotocols or None,
+                subprotocols=[Subprotocol(p) for p in subprotocols] or None,
             )
             self._local_ws_connections[ws_id] = local_ws
             logger.info(f"Tunnel: local WS connected (id={ws_id[:8]}, subprotocol={local_ws.subprotocol})")
@@ -258,7 +259,7 @@ class WSTunnelClient:
                 }))
 
             # Spawn task to forward local WS → tunnel
-            asyncio.ensure_future(self._bridge_local_ws(ws_id, local_ws))
+            _ = asyncio.ensure_future(self._bridge_local_ws(ws_id, local_ws))
 
         except Exception as e:
             logger.error(f"Tunnel: WS proxy open error: {e}")
@@ -272,12 +273,12 @@ class WSTunnelClient:
                 except Exception:
                     pass
 
-    async def _bridge_local_ws(self, ws_id: str, local_ws: Any) -> None:
+    async def _bridge_local_ws(self, ws_id: str, local_ws: websockets.client.WebSocketClientProtocol) -> None:
         """Forward messages from local WS to tunnel."""
         try:
             async for message in local_ws:
                 if self._ws and ws_id in self._local_ws_connections:
-                    logger.debug(f"Tunnel: local→tunnel WS (id={ws_id[:8]}, {len(message) if isinstance(message, (str, bytes)) else '?'} chars)")
+                    logger.debug(f"Tunnel: local→tunnel WS (id={ws_id[:8]}, {len(message)} chars)")
                     await self._ws.send(json.dumps({
                         'type': 'ws_data',
                         'id': ws_id,
@@ -289,7 +290,7 @@ class WSTunnelClient:
             logger.warning(f"Tunnel: WS bridge error (id={ws_id[:8]}): {e}")
         finally:
             logger.info(f"Tunnel: WS bridge ended, sending ws_close (id={ws_id[:8]})")
-            self._local_ws_connections.pop(ws_id, None)
+            _ = self._local_ws_connections.pop(ws_id, None)
             if self._ws:
                 try:
                     await self._ws.send(json.dumps({
@@ -299,20 +300,20 @@ class WSTunnelClient:
                 except Exception:
                     pass
 
-    async def _handle_ws_data(self, msg: dict[str, Any]) -> None:
+    async def _handle_ws_data(self, msg: dict[str, object]) -> None:
         """Forward data from tunnel to local WS."""
-        ws_id = msg['id']
-        data = msg.get('data', '')
+        ws_id = str(msg['id'])
+        data = str(msg.get('data', ''))
         local_ws = self._local_ws_connections.get(ws_id)
         if local_ws:
             try:
                 await local_ws.send(data)
             except Exception:
-                self._local_ws_connections.pop(ws_id, None)
+                _ = self._local_ws_connections.pop(ws_id, None)
 
-    async def _handle_ws_close(self, msg: dict[str, Any]) -> None:
+    async def _handle_ws_close(self, msg: dict[str, object]) -> None:
         """Close a local WS connection."""
-        ws_id = msg['id']
+        ws_id = str(msg['id'])
         local_ws = self._local_ws_connections.pop(ws_id, None)
         if local_ws:
             try:
