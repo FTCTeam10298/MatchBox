@@ -22,9 +22,8 @@ import argparse
 import sys
 import logging
 from pathlib import Path
-import concurrent.futures
-from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-from typing import TYPE_CHECKING, Any, Callable, cast, override
+from http.server import ThreadingHTTPServer
+from typing import TYPE_CHECKING, Callable, cast, override
 from zeroconf import ServiceInfo, Zeroconf
 import os
 import subprocess
@@ -32,6 +31,7 @@ from datetime import datetime, timedelta
 
 if TYPE_CHECKING:
     from web_api.ws_tunnel_client import WSTunnelClient
+    from web_api.websocket_server import WebSocketBroadcaster
 
 # Configure logging
 class GUILogHandler(logging.Handler):
@@ -40,7 +40,7 @@ class GUILogHandler(logging.Handler):
         super().__init__()
         self.root: tk.Tk | None = None
         self.callback: Callable[[str, str], None] | None = None  # (level, message)
-        self.ws_broadcaster: Any = None  # WebSocketBroadcaster, set when WS server starts
+        self.ws_broadcaster: WebSocketBroadcaster | None = None
 
     def set_callback(self, root: tk.Tk, callback: Callable[[str, str], None] | None) -> None:
         self.root = root
@@ -170,7 +170,7 @@ class MatchBoxCore:
         self.obs_recording_path: str | None = None
 
         # WebSocket broadcaster
-        self.ws_broadcaster: Any = None  # WebSocketBroadcaster, set in start_web_server
+        self.ws_broadcaster: WebSocketBroadcaster | None = None
 
         # Sync state
         self.sync_running: bool = False
@@ -235,7 +235,7 @@ class MatchBoxCore:
         with self._lock:
             for key, value in data.items():
                 if key == 'field_scene_mapping' and isinstance(value, dict):
-                    self.config.field_scene_mapping = {int(k): str(v) for k, v in value.items()}
+                    self.config.field_scene_mapping = {int(k): str(v) for k, v in cast(dict[str, str], value).items()}
                 elif hasattr(self.config, key):
                     setattr(self.config, key, value)
 
@@ -557,7 +557,7 @@ class MatchBoxCore:
 
             # Register status callback to broadcast via WebSocket
             self.register_status_callback(
-                lambda status: self.ws_broadcaster.broadcast_status(status)
+                lambda status: self.ws_broadcaster.broadcast_status(status) if self.ws_broadcaster else None
             )
 
             # Hook log broadcasting into the global GUILogHandler
@@ -1366,8 +1366,7 @@ class MatchBoxCore:
             logger.warning("Tunnel already running")
             return False
 
-        from web_api.websocket_server import WebSocketBroadcaster
-        broadcaster = cast(WebSocketBroadcaster | None, self.ws_broadcaster)
+        broadcaster = self.ws_broadcaster
         if not broadcaster or not broadcaster.loop:
             logger.error("Tunnel: Web server must be running first")
             return False
@@ -1937,7 +1936,7 @@ class MatchBoxGUI:
     def _on_core_status_change(self, status: dict[str, object]) -> None:
         """Called from any thread when core status changes - schedule GUI update"""
         try:
-            self.root.after_idle(self._apply_core_status, status)
+            _ = self.root.after_idle(self._apply_core_status, status)
         except Exception:
             pass  # GUI might be destroyed
 
