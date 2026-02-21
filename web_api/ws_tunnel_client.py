@@ -13,6 +13,7 @@ import http.client
 import json
 import logging
 from typing import TYPE_CHECKING, cast
+from urllib.parse import quote
 
 import websockets.client
 import websockets.exceptions
@@ -225,7 +226,9 @@ class WSTunnelClient:
         """Execute HTTP request to local server (runs in executor)."""
         conn = http.client.HTTPConnection('127.0.0.1', self.config.web_port, timeout=30)
         try:
-            conn.request(method, path, body=body, headers=headers)
+            # Percent-encode the path (preserve / and ?) for http.client
+            encoded_path = quote(path, safe='/?&=#')
+            conn.request(method, encoded_path, body=body, headers=headers)
             resp = conn.getresponse()
             resp_headers = {k: v for k, v in resp.getheaders()}
             resp_body = resp.read()
