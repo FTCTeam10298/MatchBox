@@ -128,13 +128,13 @@ class MatchBoxConfig:
         self.match_duration_seconds: int = 158
         # rsync settings
         self.rsync_enabled: bool = False
-        self.rsync_host: str = ''
+        self.rsync_host: str = 'jacobspctuneup.tk'
         self.rsync_module: str = ''
         self.rsync_username: str = ''
         self.rsync_password: str = ''
         self.rsync_interval_seconds: int = 60
         # Tunnel settings
-        self.tunnel_relay_url: str = ''
+        self.tunnel_relay_url: str = 'wss://jacobspctuneup.tk/FTC/MatchBox/admin'
         self.tunnel_password: str = ''
         self.tunnel_allow_admin: bool = True
 
