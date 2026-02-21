@@ -1485,6 +1485,16 @@ class MatchBoxGUI:
         self.stop_sync_button: ttk.Button
         self.sync_status_var: tk.StringVar
 
+        # Tunnel settings
+        self.tunnel_relay_url_var: tk.StringVar = tk.StringVar()
+        self.tunnel_password_var: tk.StringVar = tk.StringVar()
+        self.tunnel_allow_admin_var: tk.BooleanVar = tk.BooleanVar(value=True)
+
+        # Tunnel UI elements (initialized in create_tunnel_settings_tab)
+        self.start_tunnel_button: ttk.Button
+        self.stop_tunnel_button: ttk.Button
+        self.tunnel_status_var: tk.StringVar
+
         self.create_widgets()
         self.load_config_to_gui(self.config)
 
@@ -1535,6 +1545,9 @@ class MatchBoxGUI:
 
         # Sync settings tab
         self.create_sync_settings_tab(notebook)
+
+        # Remote access tab
+        self.create_tunnel_settings_tab(notebook)
 
         # Control & Log Frame
         control_frame = ttk.Frame(main_frame, padding="10")
@@ -1755,6 +1768,46 @@ class MatchBoxGUI:
         self.sync_status_var = tk.StringVar(value="Sync: Stopped")
         ttk.Label(sync_button_frame, textvariable=self.sync_status_var).pack(side=tk.LEFT, padx=(15, 0))
 
+    def create_tunnel_settings_tab(self, notebook: ttk.Notebook) -> None:
+        """Create remote access / tunnel settings tab"""
+        tunnel_frame = ttk.Frame(notebook, padding="10")
+        notebook.add(tunnel_frame, text="Remote Access")
+
+        # Header
+        ttk.Label(tunnel_frame, text="Remote Access (Relay Tunnel)", font=("", 12, "bold")).grid(
+            row=0, column=0, columnspan=2, sticky=tk.W, pady=(0, 5))
+
+        # Relay URL
+        ttk.Label(tunnel_frame, text="Relay Server URL:").grid(row=1, column=0, sticky=tk.W, pady=2, padx=(0, 10))
+        ttk.Entry(tunnel_frame, textvariable=self.tunnel_relay_url_var, width=30).grid(
+            row=1, column=1, sticky=tk.W, pady=2)
+
+        # Browser password
+        ttk.Label(tunnel_frame, text="Browser Password:").grid(row=2, column=0, sticky=tk.W, pady=2, padx=(0, 10))
+        ttk.Entry(tunnel_frame, textvariable=self.tunnel_password_var, width=30, show="*").grid(
+            row=2, column=1, sticky=tk.W, pady=2)
+
+        # Allow admin access checkbox
+        ttk.Checkbutton(tunnel_frame, text="Allow the MatchBox team to remotely connect to this instance",
+                        variable=self.tunnel_allow_admin_var).grid(
+            row=3, column=0, columnspan=2, sticky=tk.W, pady=(5, 0))
+
+        # Control buttons frame
+        tunnel_button_frame = ttk.Frame(tunnel_frame)
+        tunnel_button_frame.grid(row=4, column=0, columnspan=2, sticky=tk.W, pady=(15, 5))
+
+        self.start_tunnel_button = ttk.Button(tunnel_button_frame, text="Connect",
+                                              command=self.start_tunnel_cmd)
+        self.start_tunnel_button.pack(side=tk.LEFT, padx=(0, 5))
+
+        self.stop_tunnel_button = ttk.Button(tunnel_button_frame, text="Disconnect",
+                                             command=self.stop_tunnel_cmd, state=tk.DISABLED)
+        self.stop_tunnel_button.pack(side=tk.LEFT, padx=5)
+
+        # Status indicator
+        self.tunnel_status_var = tk.StringVar(value="Tunnel: Disconnected")
+        ttk.Label(tunnel_button_frame, textvariable=self.tunnel_status_var).pack(side=tk.LEFT, padx=(15, 0))
+
     def browse_output_dir(self) -> None:
         """Browse for output directory"""
         directory = filedialog.askdirectory(
@@ -1790,6 +1843,35 @@ class MatchBoxGUI:
         _ = self.stop_sync_button.config(state=tk.DISABLED)
         _ = self.sync_status_var.set("Sync: Stopped")
 
+    def start_tunnel_cmd(self) -> None:
+        """Connect to relay server"""
+        assert self.matchbox is not None
+        self.load_gui_to_config()
+
+        if not self.config.tunnel_relay_url:
+            _ = messagebox.showerror("Error", "Relay server URL is required")
+            return
+
+        if not self.matchbox.ws_broadcaster:
+            _ = messagebox.showerror("Error", "Web server must be running first.\nStart MatchBox before connecting the tunnel.")
+            return
+
+        if self.matchbox.start_tunnel():
+            _ = self.start_tunnel_button.config(state=tk.DISABLED)
+            _ = self.stop_tunnel_button.config(state=tk.NORMAL)
+            _ = self.tunnel_status_var.set("Tunnel: Connected")
+        else:
+            _ = messagebox.showerror("Error", "Failed to connect tunnel. Check logs for details.")
+
+    def stop_tunnel_cmd(self) -> None:
+        """Disconnect from relay server"""
+        assert self.matchbox is not None
+        self.matchbox.stop_tunnel()
+
+        _ = self.start_tunnel_button.config(state=tk.NORMAL)
+        _ = self.stop_tunnel_button.config(state=tk.DISABLED)
+        _ = self.tunnel_status_var.set("Tunnel: Disconnected")
+
     def load_gui_to_config(self):
         """Set configuration from GUI"""
         self.config.event_code = self.event_code_var.get()
@@ -1811,6 +1893,10 @@ class MatchBoxGUI:
         self.config.rsync_username = self.rsync_username_var.get()
         self.config.rsync_password = self.rsync_password_var.get()
         self.config.rsync_interval_seconds = self.rsync_interval_var.get()
+        # Tunnel settings
+        self.config.tunnel_relay_url = self.tunnel_relay_url_var.get()
+        self.config.tunnel_password = self.tunnel_password_var.get()
+        self.config.tunnel_allow_admin = self.tunnel_allow_admin_var.get()
 
     def load_config_to_gui(self, config: MatchBoxConfig) -> None:
         """Load configuration into GUI"""
@@ -1838,6 +1924,11 @@ class MatchBoxGUI:
         self.rsync_username_var.set(config.rsync_username)
         self.rsync_password_var.set(config.rsync_password)
         self.rsync_interval_var.set(config.rsync_interval_seconds)
+
+        # Load tunnel settings
+        self.tunnel_relay_url_var.set(config.tunnel_relay_url)
+        self.tunnel_password_var.set(config.tunnel_password)
+        self.tunnel_allow_admin_var.set(config.tunnel_allow_admin)
 
     def save_config(self) -> None:
         """Save configuration to file"""
