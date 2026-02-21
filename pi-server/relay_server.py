@@ -78,6 +78,7 @@ class TunnelInstance:
         self.instance_id: str = instance_id
         self.connected_at: float = time.time()
         self.pending_http: dict[str, asyncio.Future[dict[str, object]]] = {}
+        self.pending_http_chunks: dict[str, asyncio.Queue[bytes | None]] = {}
         self.browser_ws_connections: dict[str, web.WebSocketResponse] = {}
         # Auth fields from registration
         self.password: str = ''
@@ -253,7 +254,7 @@ class RelayServer:
 
     async def handle_tunnel_ws(self, request: web.Request) -> web.WebSocketResponse:
         """Accept a MatchBox tunnel WebSocket connection."""
-        ws = web.WebSocketResponse(compress=False)
+        ws = web.WebSocketResponse(compress=False, max_msg_size=2 * 1024 * 1024)
         _ = await ws.prepare(request)
 
         instance: TunnelInstance | None = None
@@ -319,9 +320,31 @@ class RelayServer:
 
                         if msg_type == 'http_response':
                             req_id = str(data.get('id', ''))
-                            future = instance.pending_http.pop(req_id, None)
-                            if future and not future.done():
-                                future.set_result(data)
+                            if data.get('chunked'):
+                                # Chunked response: resolve future with headers, set up chunk queue
+                                chunk_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
+                                instance.pending_http_chunks[req_id] = chunk_queue
+                                future = instance.pending_http.pop(req_id, None)
+                                if future and not future.done():
+                                    future.set_result(data)
+                            else:
+                                # Non-chunked (small response): resolve future with full body
+                                future = instance.pending_http.pop(req_id, None)
+                                if future and not future.done():
+                                    future.set_result(data)
+
+                        elif msg_type == 'http_response_chunk':
+                            req_id = str(data.get('id', ''))
+                            chunk_q = instance.pending_http_chunks.get(req_id)
+                            if chunk_q:
+                                chunk_data = base64.b64decode(str(data.get('data', '')))
+                                await chunk_q.put(chunk_data)
+
+                        elif msg_type == 'http_response_end':
+                            req_id = str(data.get('id', ''))
+                            chunk_q = instance.pending_http_chunks.pop(req_id, None)
+                            if chunk_q:
+                                await chunk_q.put(None)  # Signal end
 
                         elif msg_type == 'ws_opened':
                             ws_id = str(data.get('id', ''))
@@ -376,6 +399,10 @@ class RelayServer:
                     if not future.done():
                         _ = future.cancel()
                 instance.pending_http.clear()
+                # Signal end to any pending chunk queues
+                for chunk_q in list(instance.pending_http_chunks.values()):
+                    await chunk_q.put(None)
+                instance.pending_http_chunks.clear()
 
                 # Close browser WS connections (copy to avoid RuntimeError)
                 for browser_ws in list(instance.browser_ws_connections.values()):
@@ -436,24 +463,41 @@ class RelayServer:
                 'body': base64.b64encode(body).decode('ascii') if body else '',
             })
 
-            # Wait for response with timeout
-            resp_data = await asyncio.wait_for(future, timeout=30)
+            # Wait for response headers with timeout
+            resp_data = await asyncio.wait_for(future, timeout=60)
 
             status = cast(int, resp_data.get('status', 502))
             resp_headers = cast(dict[str, str], resp_data.get('headers', {}))
-            resp_body = base64.b64decode(str(resp_data.get('body', '')))
+            skip_resp = {'transfer-encoding', 'connection'}
 
-            # Build response, skip hop-by-hop headers
-            response = web.Response(
-                status=status,
-                body=resp_body,
-            )
-            skip_resp = {'transfer-encoding', 'content-length', 'connection'}
-            for k, v in resp_headers.items():
-                if k.lower() not in skip_resp:
-                    response.headers[k] = v
+            if resp_data.get('chunked'):
+                # Streamed response — use StreamResponse (skip Content-Length, will use chunked TE)
+                skip_stream = skip_resp | {'content-length'}
+                stream_response = web.StreamResponse(status=status)
+                for k, v in resp_headers.items():
+                    if k.lower() not in skip_stream:
+                        stream_response.headers[k] = v
+                _ = await stream_response.prepare(request)
 
-            return response
+                chunk_q = instance.pending_http_chunks.get(req_id)
+                if chunk_q:
+                    while True:
+                        chunk = await asyncio.wait_for(chunk_q.get(), timeout=60)
+                        if chunk is None:
+                            break
+                        await stream_response.write(chunk)
+                    _ = instance.pending_http_chunks.pop(req_id, None)
+
+                await stream_response.write_eof()
+                return stream_response
+            else:
+                # Non-chunked (small response)
+                resp_body = base64.b64decode(str(resp_data.get('body', '')))
+                response = web.Response(status=status, body=resp_body)
+                for k, v in resp_headers.items():
+                    if k.lower() not in skip_resp | {'content-length'}:
+                        response.headers[k] = v
+                return response
 
         except asyncio.TimeoutError:
             _ = instance.pending_http.pop(req_id, None)

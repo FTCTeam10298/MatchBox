@@ -24,6 +24,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("matchbox")
 
+# 512KB chunks for streaming HTTP responses through the tunnel
+_CHUNK_SIZE = 512 * 1024
+
 
 class WSTunnelClient:
     """Connects to a relay server and proxies requests back to local MatchBox."""
@@ -100,7 +103,7 @@ class WSTunnelClient:
                 if not ws_url.endswith('/tunnel'):
                     ws_url += '/tunnel'
 
-                async with websockets.client.connect(ws_url) as ws:
+                async with websockets.client.connect(ws_url, max_size=2 * 1024 * 1024) as ws:
                     self._ws = ws
 
                     # Send registration
@@ -180,7 +183,7 @@ class WSTunnelClient:
                 retry_delay = min(retry_delay * 2, 60)
 
     async def _handle_http_request(self, msg: dict[str, object]) -> None:
-        """Proxy an HTTP request to the local web server."""
+        """Proxy an HTTP request to the local web server, streaming the response in chunks."""
         req_id = str(msg['id'])
         method = str(msg.get('method', 'GET'))
         path = str(msg.get('path', '/'))
@@ -190,21 +193,63 @@ class WSTunnelClient:
         try:
             body = base64.b64decode(body_b64) if body_b64 else None
 
-            # Use http.client to hit the local server
+            # Percent-encode the path (preserve / and ?) for http.client
+            encoded_path = quote(path, safe='/?&=#')
+
+            # Make the local HTTP request in an executor
             loop = asyncio.get_event_loop()
-            status, resp_headers, resp_body = await loop.run_in_executor(
-                None, self._do_http_request, method, path, headers, body
+            conn = await loop.run_in_executor(
+                None, self._open_http_request, method, encoded_path, headers, body
             )
 
-            # Send response back through tunnel
-            if self._ws:
-                await self._ws.send(json.dumps({
-                    'type': 'http_response',
-                    'id': req_id,
-                    'status': status,
-                    'headers': resp_headers,
-                    'body': base64.b64encode(resp_body).decode('ascii'),
-                }))
+            try:
+                resp = conn.getresponse()
+                resp_headers = {k: v for k, v in resp.getheaders()}
+
+                # Check content length to decide chunked vs single-message
+                content_length = int(resp_headers.get('Content-Length', '0') or '0')
+                use_chunked = content_length > _CHUNK_SIZE
+
+                if use_chunked:
+                    # Large response: stream in chunks
+                    if self._ws:
+                        await self._ws.send(json.dumps({
+                            'type': 'http_response',
+                            'id': req_id,
+                            'status': resp.status,
+                            'headers': resp_headers,
+                            'chunked': True,
+                        }))
+
+                    while True:
+                        chunk = await loop.run_in_executor(None, resp.read, _CHUNK_SIZE)
+                        if not chunk:
+                            break
+                        if self._ws:
+                            await self._ws.send(json.dumps({
+                                'type': 'http_response_chunk',
+                                'id': req_id,
+                                'data': base64.b64encode(chunk).decode('ascii'),
+                            }))
+
+                    if self._ws:
+                        await self._ws.send(json.dumps({
+                            'type': 'http_response_end',
+                            'id': req_id,
+                        }))
+                else:
+                    # Small response: send in a single message
+                    resp_body = resp.read()
+                    if self._ws:
+                        await self._ws.send(json.dumps({
+                            'type': 'http_response',
+                            'id': req_id,
+                            'status': resp.status,
+                            'headers': resp_headers,
+                            'body': base64.b64encode(resp_body).decode('ascii'),
+                        }))
+            finally:
+                conn.close()
 
         except Exception as e:
             logger.error(f"Tunnel: HTTP proxy error: {e}")
@@ -220,21 +265,13 @@ class WSTunnelClient:
                 except Exception:
                     pass
 
-    def _do_http_request(
+    def _open_http_request(
         self, method: str, path: str, headers: dict[str, str], body: bytes | None
-    ) -> tuple[int, dict[str, str], bytes]:
-        """Execute HTTP request to local server (runs in executor)."""
+    ) -> http.client.HTTPConnection:
+        """Open HTTP request to local server, return the connection (caller must close)."""
         conn = http.client.HTTPConnection('127.0.0.1', self.config.web_port, timeout=30)
-        try:
-            # Percent-encode the path (preserve / and ?) for http.client
-            encoded_path = quote(path, safe='/?&=#')
-            conn.request(method, encoded_path, body=body, headers=headers)
-            resp = conn.getresponse()
-            resp_headers = {k: v for k, v in resp.getheaders()}
-            resp_body = resp.read()
-            return resp.status, resp_headers, resp_body
-        finally:
-            conn.close()
+        conn.request(method, path, body=body, headers=headers)
+        return conn
 
     async def _handle_ws_open(self, msg: dict[str, object]) -> None:
         """Open a local WebSocket connection for a proxied browser WS."""
