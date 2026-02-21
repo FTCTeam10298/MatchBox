@@ -20,7 +20,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import cast
 
 # Configure logging
 logging.basicConfig(
@@ -44,30 +44,30 @@ def get_config_path() -> str:
     return "matchbox_config.json"
 
 
-def load_config(config_path: str) -> dict[str, Any]:
+def load_config(config_path: str) -> dict[str, object]:
     """Load configuration from JSON file"""
     with open(config_path, 'r') as f:
-        return json.load(f)
+        return cast(dict[str, object], json.load(f))
 
 
-def run_rsync(config: dict[str, Any]) -> bool:
+def run_rsync(config: dict[str, object]) -> bool:
     """
     Run rsync to sync clips to remote server.
     Returns True if successful, False otherwise.
     """
     # Get rsync settings
-    host = config.get('rsync_host', '')
-    module = config.get('rsync_module', '')
-    username = config.get('rsync_username', '')
-    password = config.get('rsync_password', '')
+    host = str(config.get('rsync_host', ''))
+    module = str(config.get('rsync_module', ''))
+    username = str(config.get('rsync_username', ''))
+    password = str(config.get('rsync_password', ''))
 
     if not host or not module:
         logger.error("rsync host and module are required")
         return False
 
     # Build source path: output_dir/event_code/
-    output_dir = config.get('output_dir', './match_clips')
-    event_code = config.get('event_code', '')
+    output_dir = str(config.get('output_dir', './match_clips'))
+    event_code = str(config.get('event_code', ''))
 
     if not event_code:
         logger.error("Event code is required")
@@ -131,7 +131,7 @@ def run_rsync(config: dict[str, Any]) -> bool:
         return False
 
 
-def signal_handler(signum: int, frame: object) -> None:
+def signal_handler(_signum: int, _frame: object) -> None:
     """Handle shutdown signals"""
     global shutdown_requested
     logger.info("Shutdown signal received, finishing current operation...")
@@ -145,20 +145,22 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="MatchBox Sync - rsync daemon for match clip synchronization"
     )
-    parser.add_argument(
+    _ = parser.add_argument(
         "--config", "-c",
         help="Path to configuration file (default: matchbox_config.json)"
     )
-    parser.add_argument(
+    _ = parser.add_argument(
         "--once",
         action="store_true",
         help="Run a single sync and exit"
     )
 
     args = parser.parse_args()
+    once: bool = bool(args.once)  # pyright: ignore[reportAny]
+    config_arg: str | None = args.config  # pyright: ignore[reportAny]
 
     # Determine config path
-    config_path = args.config if args.config else get_config_path()
+    config_path: str = config_arg if config_arg else get_config_path()
 
     # Load configuration
     try:
@@ -174,18 +176,18 @@ def main() -> None:
     # Check if rsync is enabled
     if not config.get('rsync_enabled', False):
         logger.warning("rsync is not enabled in configuration. Enable it in MatchBox settings.")
-        if args.once:
+        if once:
             sys.exit(0)
         else:
             logger.info("Waiting for rsync to be enabled...")
 
     # Set up signal handlers for graceful shutdown
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
+    _ = signal.signal(signal.SIGINT, signal_handler)
+    _ = signal.signal(signal.SIGTERM, signal_handler)
 
-    interval = config.get('rsync_interval_seconds', 60)
+    interval = int(str(config.get('rsync_interval_seconds', 60)))
 
-    if args.once:
+    if once:
         # Single sync mode
         logger.info("Running single sync...")
         success = run_rsync(config)
@@ -203,12 +205,12 @@ def main() -> None:
             logger.warning(f"Could not reload config: {e}")
 
         if config.get('rsync_enabled', False):
-            run_rsync(config)
+            _ = run_rsync(config)
         else:
             logger.debug("rsync is disabled, skipping sync")
 
         # Update interval from config
-        interval = config.get('rsync_interval_seconds', 60)
+        interval = int(str(config.get('rsync_interval_seconds', 60)))
 
         # Sleep with periodic checks for shutdown
         for _ in range(interval):
