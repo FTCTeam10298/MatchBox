@@ -28,7 +28,19 @@ python matchbox-cli.py --ftc-host <host> --event-code <code>
 python build.py
 ```
 
-Note: There is no test suite or linting configuration.
+Note: There is no test suite.
+
+**Type checking:**
+```bash
+basedpyright matchbox.py matchbox-cli.py matchbox-sync.py build.py web_api/ local_video_processor.py
+```
+
+The project uses **basedpyright** in strict mode. When writing or modifying code:
+- Avoid `Any` types — use `object`, `dict[str, object]`, or `cast()` instead
+- Annotate class attributes, function parameters, and return types
+- Use `_ =` for intentionally unused call results
+- Prefix unused variables with `_` (e.g., `_dirs`)
+- Use `from __future__ import annotations` with `TYPE_CHECKING` imports to avoid circular imports at runtime
 
 ## Architecture
 
