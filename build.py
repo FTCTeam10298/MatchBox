@@ -21,7 +21,7 @@ def clean_build():
             shutil.rmtree(dir_name)
 
     # Remove .pyc files
-    for root, dirs, files in os.walk('.'):
+    for root, _dirs, files in os.walk('.'):
         for file in files:
             if file.endswith('.pyc'):
                 os.remove(os.path.join(root, file))
@@ -71,26 +71,26 @@ def create_dist_package():
         # macOS app bundle
         app_path = Path('dist') / 'MatchBox.app'
         if app_path.exists():
-            shutil.copytree(app_path, dist_path / 'MatchBox.app')
+            _ = shutil.copytree(app_path, dist_path / 'MatchBox.app')
     elif system == 'Windows':
         exe_path = Path('dist') / 'MatchBox.exe'
         if exe_path.exists():
-            shutil.copy(exe_path, dist_path)
+            _ = shutil.copy(exe_path, dist_path)
     else:
         # Linux
         exe_path = Path('dist') / 'MatchBox'
         if exe_path.exists():
-            shutil.copy(exe_path, dist_path)
+            _ = shutil.copy(exe_path, dist_path)
             # Make executable
             os.chmod(dist_path / 'MatchBox', 0o755)
 
     # Copy README and other documentation
     if os.path.exists('README.md'):
-        shutil.copy('README.md', dist_path)
+        _ = shutil.copy('README.md', dist_path)
 
     # Copy example config if it exists
     if os.path.exists('matchbox_config.json'):
-        shutil.copy('matchbox_config.json', dist_path / 'matchbox_config.example.json')
+        _ = shutil.copy('matchbox_config.json', dist_path / 'matchbox_config.example.json')
 
     print(f"\nDistribution package created: {dist_path}")
 
@@ -102,7 +102,7 @@ def create_dist_package():
         archive_format = 'gztar'
 
     print(f"Creating archive: {archive_name}.{archive_format.replace('tar', 'tar.gz')}")
-    shutil.make_archive(
+    _ = shutil.make_archive(
         str(Path('dist') / archive_name),
         archive_format,
         'dist',
