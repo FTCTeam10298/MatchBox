@@ -89,6 +89,7 @@ def run_rsync(config: dict[str, object]) -> bool:
         'rsync',
         '-avz',
         '--checksum',
+        '--exclude', '*.partial',
         str(source_path) + '/',  # Trailing slash to sync contents
         rsync_url
     ]

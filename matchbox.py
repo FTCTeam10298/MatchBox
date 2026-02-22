@@ -1319,6 +1319,7 @@ class MatchBoxCore:
             get_rsync_path(),
             '-avz',
             '--checksum',
+            '--exclude', '*.partial',
             source_arg,
             rsync_url
         ]

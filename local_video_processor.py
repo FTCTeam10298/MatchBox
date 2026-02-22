@@ -205,20 +205,25 @@ class LocalVideoProcessor:
                 output_path = self.output_dir / f"{match_name}_{counter}.mp4"
                 counter += 1
 
+            # Write to .partial file during encoding, then rename when done
+            partial_path = output_path.parent / (output_path.name + '.partial')
             logger.info(f"Extracting clip: {clip_start:.1f}s + {clip_duration:.1f}s -> {output_path}")
 
             success = await self.extract_clip_ffmpeg(
                 input_path=recording_path,
-                output_path=output_path,
+                output_path=partial_path,
                 start_time=clip_start,
                 duration=clip_duration
             )
 
-            if success and output_path.exists():
+            if success and partial_path.exists():
+                _ = partial_path.rename(output_path)
                 logger.info(f"✅ Successfully created clip: {output_path}")
                 return output_path
             else:
                 logger.error(f"❌ Failed to create clip: {output_path}")
+                if partial_path.exists():
+                    partial_path.unlink()
                 return None
 
         except Exception as e:
@@ -237,6 +242,7 @@ class LocalVideoProcessor:
                 '-c', 'copy',  # Copy streams without re-encoding for speed
                 '-threads', '1',  # Limit to single thread to minimize impact on stream
                 '-avoid_negative_ts', 'make_zero',
+                '-f', 'mp4',
                 str(output_path)
             ]
 
