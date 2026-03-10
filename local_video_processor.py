@@ -15,6 +15,9 @@ from datetime import datetime
 from typing import cast
 from collections.abc import Mapping
 
+# On Windows, prevent subprocess calls from opening visible console windows
+_SUBPROCESS_FLAGS = subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("local-video-processor")
@@ -109,7 +112,9 @@ class LocalVideoProcessor:
                 str(self.recording_path)
             ]
 
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=10, creationflags=_SUBPROCESS_FLAGS
+            )
             if result.returncode == 0:
                 data: dict[str, object] = cast(dict[str, object], json.loads(result.stdout))
                 format_data = cast(dict[str, object], data['format'])
@@ -251,7 +256,8 @@ class LocalVideoProcessor:
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                stderr=asyncio.subprocess.PIPE,
+                creationflags=_SUBPROCESS_FLAGS
             )
 
             # Lower process priority to avoid interfering with OBS stream

@@ -22,6 +22,9 @@ import time
 from pathlib import Path
 from typing import cast
 
+# On Windows, prevent subprocess calls from opening visible console windows
+_SUBPROCESS_FLAGS = subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -107,7 +110,8 @@ def run_rsync(config: dict[str, object]) -> bool:
             env=env,
             capture_output=True,
             text=True,
-            timeout=1800  # 30 minute timeout
+            timeout=1800,  # 30 minute timeout
+            creationflags=_SUBPROCESS_FLAGS
         )
 
         if result.returncode == 0:

@@ -33,6 +33,9 @@ if TYPE_CHECKING:
     from web_api.ws_tunnel_client import WSTunnelClient
     from web_api.websocket_server import WebSocketBroadcaster
 
+# On Windows, prevent subprocess calls from opening visible console windows
+_SUBPROCESS_FLAGS = subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
+
 # Configure logging
 class GUILogHandler(logging.Handler):
     """Custom logging handler that routes messages to a GUI callback and WebSocket broadcaster (thread-safe)"""
@@ -1338,7 +1341,8 @@ class MatchBoxCore:
                 cwd=cwd,
                 capture_output=True,
                 text=True,
-                timeout=1800  # 30 minute timeout
+                timeout=1800,  # 30 minute timeout
+                creationflags=_SUBPROCESS_FLAGS
             )
 
             if result.returncode == 0:
