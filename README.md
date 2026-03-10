@@ -3,9 +3,10 @@
 MatchBox is a standalone application that integrates with OBS and the *FIRST®* Tech Challenge scoring system to provide:
 - Automatic setup of scenes in OBS, including the *FIRST®* Tech Challenge scoring overlay
 - Automatic real-time scene switching based on field events
-- Match video autosplitting and clipping
+- Fully automatic match video clipping
 - Local web interface for easy access to match clips
-  - Coming soon: Automatic video upload
+- Automatic video upload
+  - Coming soon: Full integration with https://www.clipfarm.watch/
 
 <img width="941" height="981" alt="image" src="https://github.com/user-attachments/assets/3fbc17b2-c916-47e9-88b6-03cd474c3b4e" />
 
@@ -16,17 +17,17 @@ MatchBox is a standalone application that integrates with OBS and the *FIRST®* 
 
 ## Features
 
-- **OBS Integration**: Auto-configures OBS scenes with scoring system overlays
-  - WebSocket connection to OBS (localhost:4455 by default)
-  - Template setup for consistent streaming
+- **OBS Integration**: Auto-configures OBS scenes with the FTC scoring system overlays
+  - No more messing around with broken chroma key setups, awkward scoring overlay configuration, etc.
 - **Automatic Scene Switching**: Connects to FTC scoring system, and automatically switches OBS scenes based on active field
-  - Configurable field-to-scene mapping
 - **Match Video Processing**: Automatic match detection and splitting
   - Clips saved locally for immediate access
 - **Local Web Interface**: Locally serves match clips for easy access by both teams and event staff, even when the events's external Wi-Fi may be slow, unreliable, or even non-existant
-  - Accessible at http://localhost:80 (configurable)
-  - mDNS support for easy access (http://ftcvideo.local:80)
+  - mDNS support for easy access (http://ftcvideo.local)
   - Perfect for anyone on the event network to review matches, even without a full internet connection
+- **Full remote administration**: Set an instance password, and you can have your team connect to MatchBox from anywhere, whether across the room or across the whole world, as long as you have an internet connection
+  - Optionally, enable the option to let the MatchBox team connect to your instance.  Let the experts keep your stream running smoothly, no matter where you are in the world
+- **Clipping continues even if the internet doesn't**: Internet at the event dropped out?  No worries!  MatchBox handles match clipping locally, and will upload the clips whenever internet returns.  No more loosing match footage forever because the internet dropped out for a time; MatchBox only needs the local connection to the scoring system to keep clipping away.
 
 <img width="941" height="997" alt="image" src="https://github.com/user-attachments/assets/4b4467ca-b73b-40d4-bd8b-269f168e7924" />
 
@@ -50,10 +51,14 @@ MatchBox is a standalone application that integrates with OBS and the *FIRST®* 
    - Field scenes (Field 1, Field 2, etc.)
    - Shared FTC overlay browser source with chroma key filter
    - Overlay automatically added to all field scenes
+- Fill in the fields in the Sync Settings tab to allow match upload
+   - Drop me a message to get an access code
+   - Match clips will be uploaded to https://jacobspctuneup.tk/FTC/MatchBox/
+   - Coming soon: Full integration with <https://www.clipfarm.watch/>
 
 ### Operation
 1. Start the FTC scoring system
-2. Start OBS and begin streaming/recording
+2. Start OBS and begin streaming and recording
 3. Launch MatchBox (GUI or CLI)
 4. MatchBox will:
    - Connect to scoring system WebSocket
@@ -62,9 +67,9 @@ MatchBox is a standalone application that integrates with OBS and the *FIRST®* 
    - Process and split match videos
 
 ### Accessing Match Clips
-- **Locally**: http://localhost:8000 (or your configured port)
-- **Network**: http://[computer-ip]:8000
-- **mDNS**: http://ftcvideo.local:8000 (if supported)
+- **Locally**: http://localhost:80 (or your configured port)
+- **Network**: http://[computer-ip]:80
+- **mDNS**: http://ftcvideo.local:80 (if supported)
 
 ## Troubleshooting
 
@@ -104,13 +109,10 @@ Install required packages:
 pip install -r requirements.txt
 ```
 
-**Note**: On Linux, the GUI will automatically use the modern Sun Valley theme if available. If you encounter theme-related issues, you can install it separately:
-```bash
-pip install sv-ttk
-```
-
 ### Required System Tools
 - ffmpeg
+- ffprobe
+- rsync
 
 ### Architecture
 
