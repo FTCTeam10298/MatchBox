@@ -2210,6 +2210,10 @@ def main() -> None:
             else:
                 icon = PhotoImage(file=Path(__file__).with_name('us.brainstormz.MatchBox.png'))
             root.iconphoto(False, icon)
+            if sys.platform == 'win32':  # pyright: ignore[reportUnreachable]
+                import ctypes
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('us.brainstormz.MatchBox')  # pyright: ignore[reportAttributeAccessIssue]
+                root.iconbitmap(Path(__file__).with_name('us.brainstormz.MatchBox.ico'))
         except TclError as e:
             print("Icon loading failed!")
             print(e)
