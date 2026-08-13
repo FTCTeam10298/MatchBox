@@ -124,16 +124,16 @@ def download_rsync():
         # Use rsync from MSYS2 - download required packages
         msys2_base = 'https://repo.msys2.org/msys/x86_64/'
 
-        # Core packages needed for rsync (versions may need updating periodically)
+        # rsync, plus deps from https://github.com/dragon-archer/MSYS2-packages/blob/master/rsync/PKGBUILD
         packages = [
-            'rsync-3.3.0-1-x86_64.pkg.tar.zst',
-            'msys2-runtime-3.5.4-2-x86_64.pkg.tar.zst',
-            'libzstd-1.5.6-1-x86_64.pkg.tar.zst',
-            'libxxhash-0.8.2-1-x86_64.pkg.tar.zst',
+            'rsync-3.4.4-2-x86_64.pkg.tar.zst',
+            'msys2-runtime-3.6.9-2-x86_64.pkg.tar.zst',
+            'libiconv-1.19-1-x86_64.pkg.tar.zst',
             'liblz4-1.10.0-1-x86_64.pkg.tar.zst',
-            'libiconv-1.17-1-x86_64.pkg.tar.zst',
-            'libintl-0.22.4-1-x86_64.pkg.tar.zst',
-            'libopenssl-3.4.0-1-x86_64.pkg.tar.zst',
+            'libopenssl-3.6.3-1-x86_64.pkg.tar.zst',
+            'libxxhash-0.8.3-1-x86_64.pkg.tar.zst',
+            'libzstd-1.5.7-1-x86_64.pkg.tar.zst',
+            'popt-1.19-1-x86_64.pkg.tar.zst',
         ]
 
         temp_dir = output_dir / 'temp'
