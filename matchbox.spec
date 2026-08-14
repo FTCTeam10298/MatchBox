@@ -121,12 +121,10 @@ def download_rsync():
     print(f"Downloading rsync binaries for {system}...")
 
     if system == 'Windows':
-        # Use rsync from MSYS2 - download required packages
+        # rsync from MSYS2, plus deps (https://github.com/dragon-archer/MSYS2-packages/blob/master/rsync/PKGBUILD)
         msys2_base = 'https://repo.msys2.org/msys/x86_64/'
-
-        # rsync, plus deps from https://github.com/dragon-archer/MSYS2-packages/blob/master/rsync/PKGBUILD
         packages = [
-            'rsync-3.4.4-2-x86_64.pkg.tar.zst',
+            'rsync-3.5.0-1-x86_64.pkg.tar.zst',
             'msys2-runtime-3.6.9-2-x86_64.pkg.tar.zst',
             'libiconv-1.19-1-x86_64.pkg.tar.zst',
             'liblz4-1.10.0-1-x86_64.pkg.tar.zst',
