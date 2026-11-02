@@ -9,6 +9,9 @@ jobs:
     steps:
       - name: Create Executable
         uses: unofficial-rev-port/pyinstaller@v1.2
+        env:
+          ARCHFLAGS: "-arch arm64 -arch x86_64"
+          MATCHBOX_TARGET_ARCH: universal2
         with:
           python_ver: '3.12'
           pyinstaller_ver: '==6.22.3'

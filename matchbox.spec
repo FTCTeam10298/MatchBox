@@ -10,11 +10,24 @@ import urllib.request
 import zipfile
 import tarfile
 import shutil
+import importlib.util
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_all
 from PyInstaller.utils.hooks import collect_data_files
 from PyInstaller.utils.hooks import collect_submodules
 from setuptools_scm import get_version, _cli
+
+TARGET_ARCH = os.environ.get('MATCHBOX_TARGET_ARCH') or None
+
+# zeroconf's Cython extensions are optional (the .py sources ship alongside them).
+# A universal2 build can't include the arch-specific .so files, so remove them
+# and let zeroconf fall back to pure Python.
+if TARGET_ARCH == 'universal2':
+    _zc = importlib.util.find_spec('zeroconf')  # does not import the package
+    if _zc and _zc.submodule_search_locations:
+        for _so in Path(list(_zc.submodule_search_locations)[0]).rglob('*.so'):
+            print(f"Removing optional Cython extension: {_so}")
+            _so.unlink()
 
 _cli.main(["--force-write-version-files"])
 
@@ -298,7 +311,7 @@ else: # Use onedir on macOS, since we are creating a .app bundle anyways, and on
         console=False,
         disable_windowed_traceback=False,
         argv_emulation=False,
-        target_arch=None,
+        target_arch=TARGET_ARCH, # Build universal binary (Intel + Arm) on macOS in CI
         codesign_identity=None,
         entitlements_file=None,
     )
