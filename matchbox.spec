@@ -61,7 +61,7 @@ def download_ffmpeg():
 
     elif system == 'Darwin':
         # macOS: Use evermeet.cx (official macOS builds)
-        ffmpeg_url = 'https://evermeet.cx/ffmpeg/getrelease/zip'
+        ffmpeg_url = 'https://evermeet.cx/ffmpeg/ffmpeg-9.0.2.zip'
         ffmpeg_zip = output_dir / 'ffmpeg.zip'
         print(f"  Fetching {ffmpeg_url}")
         urllib.request.urlretrieve(ffmpeg_url, ffmpeg_zip)
@@ -70,7 +70,7 @@ def download_ffmpeg():
             zip_ref.extractall(output_dir)
         os.remove(ffmpeg_zip)
 
-        ffprobe_url = 'https://evermeet.cx/ffmpeg/getrelease/ffprobe/zip'
+        ffprobe_url = 'https://evermeet.cx/ffmpeg/ffprobe-9.0.2.zip'
         ffprobe_zip = output_dir / 'ffprobe.zip'
         print(f"  Fetching {ffprobe_url}")
         urllib.request.urlretrieve(ffprobe_url, ffprobe_zip)
