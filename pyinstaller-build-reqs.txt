@@ -1,2 +1,4 @@
+pyinstaller>=6.0.0
 setuptools-scm==8.1.0
+zstandard>=0.22.0; sys_platform == 'win32' # For extracting MSYS2 packages during build (Windows rsync)
 -r requirements.txt
