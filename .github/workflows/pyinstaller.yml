@@ -18,12 +18,12 @@ jobs:
           requirements: 'pyinstaller-build-reqs.txt'
           clean_checkout: false
       - name: Make DMG
-        uses: unofficial-rev-port/create-dmg-action-fixed-icon@v0.1.2
+        uses: unofficial-rev-port/create-dmg-action-fixed-icon@v1
         with:
           name: 'MatchBox'
           srcdir: './dist/MatchBox.app'
       - name: Upload DMG
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: 'MatchBox_macOS'
           path: './MatchBox.dmg'
@@ -52,7 +52,7 @@ jobs:
           clean_checkout: false
           upload_exe_with_name: 'MatchBox_Linux'
       - name: Upload version file for testing
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: 'version'
           path: './_version.py'
