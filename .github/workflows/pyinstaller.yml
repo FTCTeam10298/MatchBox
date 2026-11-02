@@ -21,6 +21,28 @@ jobs:
           spec: 'matchbox.spec'
           requirements: 'pyinstaller-build-reqs.txt'
           clean_checkout: false
+      - name: Report non-universal2 binaries
+        if: always()
+        shell: bash
+        run: |
+          SP=/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages
+          echo "Scanning $SP and bundled tool binaries for non-universal2 Mach-O files..."
+          bad=0
+          while IFS= read -r f; do
+            archs=$(lipo -archs "$f" 2>/dev/null) || continue
+            [ -z "$archs" ] && continue
+            case "$archs" in
+              "x86_64 arm64"|"arm64 x86_64") ;;
+              *) echo "THIN ($archs): $f"; bad=1 ;;
+            esac
+          done < <(find "$SP" build/ffmpeg-binaries \( -name '*.so' -o -name '*.dylib' -o -name 'ffmpeg' -o -name 'ffprobe' \) -type f 2>/dev/null)
+          echo
+          echo "Offending packages (top-level dirs in site-packages):"
+          find "$SP" \( -name '*.so' -o -name '*.dylib' \) -type f 2>/dev/null | while IFS= read -r f; do
+            archs=$(lipo -archs "$f" 2>/dev/null) || continue
+            case "$archs" in "x86_64 arm64"|"arm64 x86_64"|"") ;; *) echo "${f#$SP/}" | cut -d/ -f1 ;; esac
+          done | sort -u
+          exit 0
       - name: Make DMG
         uses: unofficial-rev-port/create-dmg-action-fixed-icon@v1
         with:

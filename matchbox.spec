@@ -73,28 +73,37 @@ def download_ffmpeg():
         os.remove(archive)
 
     elif system == 'Darwin':
-        # macOS: Use evermeet.cx (official macOS builds)
-        ffmpeg_url = 'https://evermeet.cx/ffmpeg/ffmpeg-9.0.2.zip'
-        ffmpeg_zip = output_dir / 'ffmpeg.zip'
-        print(f"  Fetching {ffmpeg_url}")
-        urllib.request.urlretrieve(ffmpeg_url, ffmpeg_zip)
+        # macOS: static, signed release builds from ffmpeg.martin-riedl.de
+        # One build per arch, merged into a universal binary with lipo.
+        import subprocess
+        base = 'https://ffmpeg.martin-riedl.de/redirect/latest/macos'
 
-        with zipfile.ZipFile(ffmpeg_zip, 'r') as zip_ref:
-            zip_ref.extractall(output_dir)
-        os.remove(ffmpeg_zip)
+        for tool in ('ffmpeg', 'ffprobe'):
+            thin = []
+            for arch in ('arm64', 'amd64'):
+                url = f'{base}/{arch}/release/{tool}.zip'
+                tmp = output_dir / f'{tool}-{arch}'
+                tmp.mkdir(exist_ok=True)
+                zip_path = tmp / f'{tool}.zip'
 
-        ffprobe_url = 'https://evermeet.cx/ffmpeg/ffprobe-9.0.2.zip'
-        ffprobe_zip = output_dir / 'ffprobe.zip'
-        print(f"  Fetching {ffprobe_url}")
-        urllib.request.urlretrieve(ffprobe_url, ffprobe_zip)
+                print(f"  Fetching {url}")
+                # Need custom user agent to avoid 403 when downloading
+                req = urllib.request.Request(
+                    url, 
+                    headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+                )
+                with urllib.request.urlopen(req) as response, open(zip_path, 'wb') as out_file:
+                    out_file.write(response.read())
 
-        with zipfile.ZipFile(ffprobe_zip, 'r') as zip_ref:
-            zip_ref.extractall(output_dir)
-        os.remove(ffprobe_zip)
+                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                    zip_ref.extractall(tmp)
+                thin.append(str(tmp / tool))
 
-        # Make executable
-        os.chmod(output_dir / 'ffmpeg', 0o755)
-        os.chmod(output_dir / 'ffprobe', 0o755)
+            fat = output_dir / tool
+            subprocess.run(['lipo', '-create', '-output', str(fat), *thin], check=True)
+            os.chmod(fat, 0o755)
+            for t in thin:
+                shutil.rmtree(Path(t).parent)
 
     else:  # Linux
         url = 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz'
