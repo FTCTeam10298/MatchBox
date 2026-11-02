@@ -13,7 +13,7 @@ jobs:
         uses: unofficial-rev-port/pyinstaller@v1.2
         with:
           python_ver: '3.12'
-          pyinstaller_ver: '==6.6.0'
+          pyinstaller_ver: '==6.22.3'
           spec: 'matchbox.spec'
           requirements: 'pyinstaller-build-reqs.txt'
           clean_checkout: false
@@ -34,7 +34,7 @@ jobs:
         uses: unofficial-rev-port/pyinstaller@v1.2
         with:
           python_ver: '3.12'
-          pyinstaller_ver: '==6.6.0'
+          pyinstaller_ver: '==6.22.3'
           spec: 'matchbox.spec'
           requirements: 'pyinstaller-build-reqs.txt'
           clean_checkout: false
@@ -46,7 +46,7 @@ jobs:
         uses: unofficial-rev-port/pyinstaller@v1.2
         with:
           python_ver: '3.12'
-          pyinstaller_ver: '==6.6.0'
+          pyinstaller_ver: '==6.22.3'
           spec: 'matchbox.spec'
           requirements: 'pyinstaller-build-reqs.txt'
           clean_checkout: false
