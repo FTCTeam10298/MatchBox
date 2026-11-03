@@ -17,7 +17,7 @@ MatchBox is a standalone application that integrates with OBS and the *FIRST®* 
 
 ## Features
 
-- **OBS Integration**: Auto-configures OBS scenes with the FTC scoring system overlays
+- **OBS Integration**: Automatically configures OBS scenes with the FTC scoring system overlay
   - No more messing around with broken chroma key setups, awkward scoring overlay configuration, etc.
 - **Automatic Scene Switching**: Connects to FTC scoring system, and automatically switches OBS scenes based on active field
 - **Match Video Processing**: Automatic match detection and splitting
@@ -26,7 +26,7 @@ MatchBox is a standalone application that integrates with OBS and the *FIRST®* 
   - mDNS support for easy access (http://ftcvideo.local)
   - Perfect for anyone on the event network to review matches, even without a full internet connection
 - **Full remote administration**: Set an instance password, and you can have your team connect to MatchBox from anywhere, whether across the room or across the whole world, as long as you have an internet connection
-  - Optionally, enable the option to let the MatchBox team connect to your instance.  Let the experts keep your stream running smoothly, no matter where you are in the world
+  - Optionally, enable the option to let the MatchBox team connect to your instance.  Let the experts help keep your stream running smoothly, no matter where you are in the world
 - **Clipping continues even if the internet doesn't**: Internet at the event dropped out?  No worries!  MatchBox handles match clipping locally, and will upload the clips whenever internet returns.  No more loosing match footage forever because the internet dropped out for a time; MatchBox only needs the local connection to the scoring system to keep clipping away.
 
 <img width="941" height="997" alt="image" src="https://github.com/user-attachments/assets/4b4467ca-b73b-40d4-bd8b-269f168e7924" />
@@ -67,9 +67,9 @@ MatchBox is a standalone application that integrates with OBS and the *FIRST®* 
    - Process and split match videos
 
 ### Accessing Match Clips
-- **Locally**: http://localhost:80 (or your configured port)
-- **Network**: http://[computer-ip]:80
-- **mDNS**: http://ftcvideo.local:80 (if supported)
+- **Local network (mDNS)**: http://ftcvideo.local:80 (or your configured port)
+- **Local network (manual)**: http://[computer-ip]:80 (or your configured port)
+- **Same computer**: http://localhost:80 (or your configured port)
 
 ## Troubleshooting
 
@@ -82,7 +82,7 @@ MatchBox is a standalone application that integrates with OBS and the *FIRST®* 
 ### FTC Scoring System Issues
 - Verify event code is correct
 - Check scoring system is running and accessible
-- Test WebSocket URL in browser: `ws://<scoring system host>/stream/display/command/?code=YOURCODE`
+- Test WebSocket URL in browser: `ws://<scoring system host>/stream/display/command/?code=YOUREVENTCODE`
 
 ### Web Interface Issues
 - Check if port is already in use
@@ -99,30 +99,22 @@ MatchBox is a standalone application that integrates with OBS and the *FIRST®* 
 ## Developer Information
 
 ### Software Dependencies
-- Python 3.8+
-- OBS Studio with WebSocket plugin enabled
-- FTC Scoring System accessible on the network
+- Python 3.12+
+- `ffmpeg` and `ffprobe` for video encoding
+- `rsync` for rsync-based remote clip uploading
+- OBS Studio with WebSocket server enabled
+- Official *FIRST* Tech Challenge Live Scoring System accessible on the network
 
-### Python Packages
-Install required packages:
+### Python setup
 ```bash
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### Required System Tools
-- ffmpeg
-- ffprobe
-- rsync
+For building binaries with pyinstaller:
 
-### Architecture
-
-#### Core Components
-- `MatchBoxCore`: Main application logic
-- `MatchBoxGUI`: Tkinter-based graphical interface
-- `matchbox-cli.py`: Command-line interface
-- Web server: Simple HTTP server for match clips
-
-#### Network Connections
-- **FTC Scoring System**: WebSocket connection for match events
-- **OBS Studio**: WebSocket connection for scene control
-- **Local Network**: HTTP server for match clip access
+```bash
+pip install -r pyinstaller-build-reqs.txt
+pyinstaller matchbox.spec
+```
