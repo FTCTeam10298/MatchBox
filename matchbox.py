@@ -2170,7 +2170,7 @@ def main() -> None:
     else:
         # GUI mode
         try:
-            from ctypes import windll
+            from ctypes import windll  # pyright: ignore[reportAttributeAccessIssue]
             windll.shcore.SetProcessDpiAwareness(1)
         except:
             pass
@@ -2181,7 +2181,7 @@ def main() -> None:
         import platform
         if platform.system() == "Linux":
             try:
-                import sv_ttk
+                import sv_ttk  # pyright: ignore[reportMissingImports]
                 sv_ttk.set_theme("dark")
                 logger.info("Applied Sun Valley theme")
             except ImportError:
