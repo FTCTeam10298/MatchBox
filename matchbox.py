@@ -1624,17 +1624,17 @@ class MatchBoxGUI:
         ttk.Label(conn_frame, text="FTC Scoring System", font=("", 12, "bold")).grid(
             row=0, column=0, columnspan=3, sticky=tk.W, pady=(0, 5))
 
-        ttk.Label(conn_frame, text="Event Code:").grid(row=1, column=0, sticky=tk.W, pady=2, padx=(0, 10))
-        ttk.Entry(conn_frame, textvariable=self.event_code_var, width=30).grid(
+        ttk.Label(conn_frame, text="Scoring System Host:").grid(row=1, column=0, sticky=tk.W, pady=2, padx=(0, 10))
+        ttk.Entry(conn_frame, textvariable=self.scoring_host_var, width=30).grid(
             row=1, column=1, sticky=tk.W, pady=2)
 
-        ttk.Label(conn_frame, text="Scoring System Host:").grid(row=2, column=0, sticky=tk.W, pady=2, padx=(0, 10))
-        ttk.Entry(conn_frame, textvariable=self.scoring_host_var, width=30).grid(
-            row=2, column=1, sticky=tk.W, pady=2)
-
-        ttk.Label(conn_frame, text="Port:").grid(row=2, column=2, sticky=tk.W, pady=2, padx=10)
+        ttk.Label(conn_frame, text="Port:").grid(row=1, column=2, sticky=tk.W, pady=2, padx=10)
         ttk.Entry(conn_frame, textvariable=self.scoring_port_var, width=6, validate="key", validatecommand=(self.vcmd, "%P")).grid(
-            row=2, column=3, sticky=tk.W, pady=2)
+            row=1, column=3, sticky=tk.W, pady=2)
+
+        ttk.Label(conn_frame, text="Event Code:").grid(row=2, column=0, sticky=tk.W, pady=2, padx=(0, 10))
+        ttk.Entry(conn_frame, textvariable=self.event_code_var, width=30).grid(
+            row=2, column=1, sticky=tk.W, pady=2)
 
         # OBS Settings
         ttk.Label(conn_frame, text="OBS Settings", font=("", 12, "bold")).grid(
@@ -1658,7 +1658,7 @@ class MatchBoxGUI:
         notebook.add(mapping_frame, text="Scene Mapping")
 
         ttk.Label(mapping_frame, text="Field to Scene Mapping", font=("", 12, "bold")).grid(
-            row=0, column=0, columnspan=2, sticky=tk.W, pady=(0, 10))
+            row=0, column=0, columnspan=2, sticky=tk.W, pady=(0, 5))
 
         # Scene mapping entries
         self.scene_mappings = {}

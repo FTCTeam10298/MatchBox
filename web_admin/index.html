@@ -39,10 +39,10 @@
         <button class="btn btn-danger btn-sm" id="btn-stop-tunnel" disabled>Stop Tunnel</button>
     </div>
     <div class="status-dots">
-        <div class="status-dot"><span class="dot" id="dot-running"></span> Running</div>
+        <div class="status-dot"><span class="dot" id="dot-running"></span> MatchBox</div>
+        <div class="status-dot"><span class="dot" id="dot-ftc"></span> FTCLive Scoring System</div>
         <div class="status-dot"><span class="dot" id="dot-obs"></span> OBS</div>
-        <div class="status-dot"><span class="dot" id="dot-ftc"></span> FTC</div>
-        <div class="status-dot"><span class="dot" id="dot-tunnel"></span> Tunnel</div>
+        <div class="status-dot"><span class="dot" id="dot-tunnel"></span> Remote Access Tunnel</div>
     </div>
 </div>
 
@@ -85,16 +85,14 @@
     <div class="form-section">
         <h2>FTC Scoring System</h2>
         <div class="form-row">
-            <label for="cfg-event-code">Event Code</label>
-            <input type="text" id="cfg-event-code">
-        </div>
-        <div class="form-row">
             <label for="cfg-scoring-host">Scoring System Host</label>
             <input type="text" id="cfg-scoring-host">
-        </div>
-        <div class="form-row">
             <label for="cfg-scoring-port">Port</label>
             <input type="number" id="cfg-scoring-port">
+        </div>
+        <div class="form-row">
+            <label for="cfg-event-code">Event Code</label>
+            <input type="text" id="cfg-event-code">
         </div>
     </div>
 
@@ -103,8 +101,6 @@
         <div class="form-row">
             <label for="cfg-obs-host">OBS WebSocket Host</label>
             <input type="text" id="cfg-obs-host">
-        </div>
-        <div class="form-row">
             <label for="cfg-obs-port">Port</label>
             <input type="number" id="cfg-obs-port">
         </div>
@@ -155,8 +151,6 @@
         <div class="form-row">
             <label for="cfg-mdns-name">Web Server Name</label>
             <input type="text" id="cfg-mdns-name">
-        </div>
-        <div class="form-row">
             <label for="cfg-web-port">Port</label>
             <input type="number" id="cfg-web-port">
         </div>

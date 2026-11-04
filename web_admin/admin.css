@@ -148,7 +148,12 @@ body {
 }
 
 .form-row label {
-    min-width: 180px;
+    min-width: 192px;
+    font-size: 14px;
+    color: var(--text-muted);
+}
+.form-row label:nth-child(3) {
+    min-width: 32px;
     font-size: 14px;
     color: var(--text-muted);
 }
