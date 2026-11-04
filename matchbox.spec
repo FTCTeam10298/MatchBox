@@ -324,7 +324,7 @@ else: # Use onedir on macOS, since we are creating a .app bundle anyways, and on
         codesign_identity=None,
         entitlements_file=None,
     )
-    coll = COLLECT(
+    coll = COLLECT(  # pyright: ignore[reportUndefinedVariable]
         exe,
         a.binaries,
         a.zipfiles,
@@ -344,18 +344,17 @@ else: # Use onedir on macOS, since we are creating a .app bundle anyways, and on
         codesign_identity=None,
         entitlements_file=None,
     )
-
-app = BUNDLE(  # pyright: ignore[reportUndefinedVariable]
-    system == 'Darwin' and coll or exe,
-    name='MatchBox.app',
-    icon='us.brainstormz.MatchBox.icns',
-    bundle_identifier=None,
-    version=get_version(),
-    info_plist={
-        'NSPrincipalClass': 'NSApplication',
-        'NSAppleScriptEnabled': False,
-        'CFBundleIdentifier': 'us.brainstormz.MatchBox',
-        'CFBundleDisplayName': 'MatchBox™ for FIRST® Tech Challenge',
-        'NSHumanReadableCopyright': 'Copyright © the MatchBox™ development team and contributors.\nThis software is released under the MIT license.',
-    },
-)
+    app = BUNDLE(  # pyright: ignore[reportUndefinedVariable]
+        system == 'Darwin' and coll or exe,
+        name='MatchBox.app',
+        icon='us.brainstormz.MatchBox.icns',
+        bundle_identifier=None,
+        version=get_version(),
+        info_plist={
+            'NSPrincipalClass': 'NSApplication',
+            'NSAppleScriptEnabled': False,
+            'CFBundleIdentifier': 'us.brainstormz.MatchBox',
+            'CFBundleDisplayName': 'MatchBox™ for FIRST® Tech Challenge',
+            'NSHumanReadableCopyright': 'Copyright © the MatchBox™ development team and contributors.\nThis software is released under the MIT license.',
+        },
+    )
