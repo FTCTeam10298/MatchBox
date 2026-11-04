@@ -219,6 +219,44 @@ def download_rsync():
     return output_dir
 
 
+def detect_min_macos(root):
+    """Highest minimum-OS requirement across every Mach-O file under root."""
+    from macholib.MachO import MachO  # PyInstaller dependency on macOS
+    from macholib.mach_o import LC_BUILD_VERSION, LC_VERSION_MIN_MACOSX
+
+    magics = {b'\xfe\xed\xfa\xce', b'\xfe\xed\xfa\xcf', b'\xce\xfa\xed\xfe',
+            b'\xcf\xfa\xed\xfe', b'\xca\xfe\xba\xbe', b'\xbe\xba\xfe\xca'}
+
+    def unpack(v):
+        return ((v >> 16) & 0xFF, (v >> 8) & 0xFF, v & 0xFF)
+
+    highest, culprit = (0, 0, 0), None
+    for p in Path(root).rglob('*'):
+        if p.is_symlink() or not p.is_file():
+            continue
+        try:
+            with open(p, 'rb') as f:
+                if f.read(4) not in magics:
+                    continue
+            macho = MachO(str(p))
+        except Exception:
+            continue  # not actually Mach-O (e.g. the rsync wrapper script)
+        for header in macho.headers:  # one per arch slice
+            for lc, cmd, _data in header.commands:
+                if lc.cmd == LC_BUILD_VERSION:
+                    v = unpack(cmd.minos)
+                elif lc.cmd == LC_VERSION_MIN_MACOSX:
+                    v = unpack(cmd.version)
+                else:
+                    continue
+                if v > highest:
+                    highest, culprit = v, p
+
+    highest_str = '.'.join(str(n) for n in (highest if highest[2] else highest[:2]))
+    print(f"Highest macOS requirement: {highest_str} {highest} ({culprit})")
+    return highest_str
+
+
 # Download ffmpeg and add to binaries
 ffmpeg_dir = download_ffmpeg()
 system = platform.system()
@@ -356,5 +394,6 @@ else: # Use onedir on macOS, since we are creating a .app bundle anyways, and on
             'CFBundleIdentifier': 'us.brainstormz.MatchBox',
             'CFBundleDisplayName': 'MatchBox™ for FIRST® Tech Challenge',
             'NSHumanReadableCopyright': 'Copyright © the MatchBox™ development team and contributors.\nThis software is released under the MIT license.',
+            'LSMinimumSystemVersion': detect_min_macos(Path(DISTPATH) / 'MatchBox')  # pyright: ignore[reportUndefinedVariable]
         },
     )
